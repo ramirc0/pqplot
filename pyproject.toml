@@ -26,5 +26,6 @@ line-length = 100
 select = ["E", "F", "I", "UP", "B", "NPY"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["src", "tests"]
+addopts = "--doctest-modules"
 filterwarnings = ["error"]
