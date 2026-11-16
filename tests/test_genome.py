@@ -233,3 +233,98 @@ def test_concatenated_position_accepts_scalars(three):
 @pytest.mark.parametrize(("name", "label"), [("chr1", "1"), ("X", "X"), ("chrM", "M")])
 def test_chromosome_label_drops_the_chr_prefix(name, label):
     assert Chromosome(name, 10).label == label
+
+
+def sizes_file(tmp_path, text):
+    path = tmp_path / "x.chrom.sizes"
+    path.write_text(text)
+    return path
+
+
+def test_from_sizes_accepts_a_one_shot_iterator_of_chroms(tmp_path):
+    path = sizes_file(tmp_path, "chr1\t100\nchr2\t50\n")
+    assert [c.name for c in Genome.from_sizes(path, chroms=iter(["chr2"]))] == ["chr2"]
+
+
+@pytest.mark.parametrize(
+    "chromosomes",
+    [
+        [Chromosome("chr1", 100), Chromosome("1", 200)],
+        [Chromosome("chrM", 16), Chromosome("MT", 16)],
+    ],
+)
+def test_genome_rejects_chromosomes_that_share_a_name(chromosomes):
+    with pytest.raises(ValueError, match="more than once"):
+        Genome(chromosomes)
+
+
+def test_from_sizes_rejects_a_repeated_name(tmp_path):
+    with pytest.raises(ValueError, match="more than once"):
+        Genome.from_sizes(sizes_file(tmp_path, "chr1\t100\nchr1\t200\n"))
+
+
+@pytest.mark.parametrize("text", ["", "scaffold_1\t100\nscaffold_2\t50\n", "Chr1\t100\n"])
+def test_from_sizes_rejects_a_file_without_primary_chromosomes(tmp_path, text):
+    with pytest.raises(ValueError, match="chroms="):
+        Genome.from_sizes(sizes_file(tmp_path, text))
+
+
+@pytest.mark.parametrize(
+    ("length", "centromere"),
+    [(0, None), (-5, None), (100, (30, 20)), (100, (-5, 10)), (100, (90, 500))],
+)
+def test_chromosome_rejects_impossible_lengths_and_centromeres(length, centromere):
+    with pytest.raises(ValueError, match="chr1"):
+        Chromosome("chr1", length, centromere=centromere)
+
+
+def test_band_rejects_an_end_before_its_start():
+    with pytest.raises(ValueError, match="band"):
+        Band(10, 5, "p11", Stain("gneg"))
+
+
+@pytest.mark.parametrize(("start", "end"), [(20, 10), (-5, 10)])
+def test_region_rejects_impossible_spans(start, end):
+    with pytest.raises(ValueError, match="region"):
+        Region("chr1", start, end)
+
+
+def test_region_parse_keeps_colons_in_the_name():
+    assert Region.parse("HLA-A*01:01:1-100") == Region("HLA-A*01:01", 1, 100)
+
+
+def test_region_parse_rejects_non_ascii_digits():
+    with pytest.raises(ValueError, match="region"):
+        Region.parse("chr1:١٢-٣٤")
+
+
+def test_natural_order_treats_superscripts_as_names():
+    assert natural_order("chr²") == (1, 5, "²")
+
+
+@pytest.mark.parametrize("gap", [-1, float("nan"), float("inf")])
+def test_concatenated_rejects_negative_or_infinite_gaps(three, gap):
+    with pytest.raises(ValueError, match="gap"):
+        three.concatenated(gap=gap)
+
+
+def test_position_rejects_columns_of_different_lengths(three):
+    with pytest.raises(ValueError, match="length"):
+        three.concatenated().position(["chr2"], [1, 2, 3])
+
+
+def test_position_is_nan_outside_the_chromosome(three):
+    linear = three.concatenated(gap=10)
+    np.testing.assert_array_equal(
+        linear.position(["chr1", "chr1", "chr1", "chr2"], [-1, 0, 100, 51]),
+        [np.nan, 0, 100, np.nan],
+    )
+
+
+def test_position_matches_float_chromosome_names(three):
+    np.testing.assert_array_equal(three.concatenated().position([1.0, 2.0], [5, 5]), [5, 105])
+
+
+def test_offset_of_a_missing_chromosome_names_it(three):
+    with pytest.raises(KeyError, match="chr9"):
+        three.concatenated().offset("chr9")

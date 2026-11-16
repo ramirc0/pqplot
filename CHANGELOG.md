@@ -10,10 +10,31 @@ document.
 
 ## [Unreleased]
 
+### Changed
+
+- `Genome`, `Chromosome`, `Band` and `Region` raise `ValueError` for input
+  they used to accept silently: chromosomes that share a name (`chr1` and
+  `1`), lengths of 0 or less, centromeres outside the chromosome, bands that
+  end before they start, and regions with a negative or reversed span.
+- `Genome.from_sizes` and `Genome.from_cytobands` raise `ValueError` when no
+  chromosome is chosen by default, with a hint to pass `chroms=`.
+- `LinearGenome.position` returns NaN for positions outside their
+  chromosome, so they no longer land on a neighbor. It raises `ValueError`
+  when `chrom` and `pos` differ in length. `concatenated` rejects negative
+  or infinite gaps.
+
 ### Fixed
 
 - `TrackPanels.heatmap` and `TrackPanels.intervals` hide the track's value
   axis, as `mark` and `label` do. It showed a meaningless 0 to 1 scale.
+- `chroms=` accepts a one-shot iterator. A generator used to give an empty
+  genome.
+- Sizes and centromere files accept spaces between columns, padded names, a
+  byte order mark, and BED track or browser lines. A malformed line raises
+  an error that names the file and line.
+- `Region.parse` keeps colons in the name, as in `HLA-A*01:01:1-100`.
+- A chromosome column of floats, such as a pandas integer column with
+  nulls, matches names: `1.0` finds chromosome 1.
 
 ## [0.1.0] - 2026-11-15
 

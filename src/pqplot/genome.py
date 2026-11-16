@@ -26,7 +26,7 @@ LETTER_ORDER = {"X": 0, "Y": 1, "Z": 2, "W": 3, "MT": 4}
 def chrom_key(name: object) -> str:
     """Return the key that matches one chromosome across naming styles.
 
-    ``chr1`` and ``1`` share a key, and so do ``chrM`` and ``MT``.
+    ``chr1``, ``1`` and ``1.0`` share a key, and so do ``chrM`` and ``MT``.
 
     Examples
     --------
@@ -34,6 +34,9 @@ def chrom_key(name: object) -> str:
     ('1', 'MT')
     """
     key = str(name).removeprefix("chr")
+    # A numeric column with nulls arrives as floats, so 1.0 names chromosome 1.
+    if key.endswith(".0") and key[:-2].isdecimal():
+        key = key[:-2]
     return "MT" if key == "M" else key
 
 
@@ -48,7 +51,7 @@ def natural_order(name: object) -> tuple[int, int, str]:
     ['chr2', 'chr10', 'chrX']
     """
     key = chrom_key(name)
-    if key.isdigit():
+    if key.isdecimal():
         return (0, int(key), "")
     return (1, LETTER_ORDER.get(key, len(LETTER_ORDER)), key)
 
@@ -113,6 +116,10 @@ class Band:
     name: str
     stain: Stain
 
+    def __post_init__(self):
+        if self.end < self.start:
+            raise ValueError(f"band {self.name} ends at {self.end}, before its start {self.start}")
+
 
 @dataclass(frozen=True)
 class Chromosome:
@@ -130,6 +137,12 @@ class Chromosome:
         ``(start, end)`` of the centromere. ``(0, 0)`` marks a telocentric
         chromosome. None means the position is unknown.
 
+    Raises
+    ------
+    ValueError
+        If the length is not positive or the centromere lies outside the
+        chromosome.
+
     Examples
     --------
     >>> Chromosome("chr1", 1000, centromere=(400, 450)).telocentric
@@ -140,6 +153,17 @@ class Chromosome:
     length: int
     bands: tuple[Band, ...] = ()
     centromere: tuple[int, int] | None = None
+
+    def __post_init__(self):
+        if not self.length > 0:
+            raise ValueError(f"{self.name} length must be positive, got {self.length}")
+        if (
+            self.centromere is not None
+            and not 0 <= self.centromere[0] <= self.centromere[1] <= self.length
+        ):
+            raise ValueError(
+                f"{self.name} centromere {self.centromere} is not a span within 0 to {self.length}"
+            )
 
     @property
     def label(self) -> str:
@@ -175,6 +199,11 @@ class Region:
     start, end : int
         Span in bp.
 
+    Raises
+    ------
+    ValueError
+        If start is negative or exceeds end.
+
     Examples
     --------
     >>> Region("chr17", 43_044_295, 43_125_483).end
@@ -185,12 +214,17 @@ class Region:
     start: int
     end: int
 
+    def __post_init__(self):
+        if not 0 <= self.start <= self.end:
+            raise ValueError(f"region {self.chrom}:{self.start}-{self.end} is not a span from 0 up")
+
     @classmethod
     def parse(cls, text: str) -> Region:
         """Parse a locus such as ``chr17:43,044,295-43,125,483``.
 
-        Commas are optional. The numbers are kept as written, with no shift
-        between 1-based and 0-based coordinates.
+        Commas are optional. The name may hold colons, as in HLA alleles. The
+        numbers are kept as written, with no shift between 1-based and
+        0-based coordinates.
 
         Parameters
         ----------
@@ -211,14 +245,11 @@ class Region:
         >>> Region.parse("chr17:43,044,295-43,125,483")
         Region(chrom='chr17', start=43044295, end=43125483)
         """
-        match = re.fullmatch(r"\s*([^:\s]+):([\d,]+)-([\d,]+)\s*", text)
+        match = re.fullmatch(r"\s*(\S+):([0-9,]+)-([0-9,]+)\s*", text)
         if match is None:
             raise ValueError(f"not a region: {text!r}")
         chrom, start, end = match.groups()
-        start, end = int(start.replace(",", "")), int(end.replace(",", ""))
-        if start > end:
-            raise ValueError(f"region start exceeds end: {text!r}")
-        return cls(chrom, start, end)
+        return cls(chrom, int(start.replace(",", "")), int(end.replace(",", "")))
 
 
 class Genome:
@@ -231,6 +262,11 @@ class Genome:
     chromosomes : iterable of Chromosome
         Chromosomes in display order.
 
+    Raises
+    ------
+    ValueError
+        If two chromosomes share a name, such as ``chr1`` and ``1``.
+
     Examples
     --------
     >>> genome = Genome([Chromosome("chr1", 1000), Chromosome("chr2", 500)])
@@ -239,7 +275,12 @@ class Genome:
     """
 
     def __init__(self, chromosomes: Iterable[Chromosome]):
-        self._by_key = {chrom_key(c.name): c for c in chromosomes}
+        self._by_key = {}
+        for chromosome in chromosomes:
+            key = chrom_key(chromosome.name)
+            if key in self._by_key:
+                raise ValueError(f"genome lists chromosome {chromosome.name!r} more than once")
+            self._by_key[key] = chromosome
 
     def __getitem__(self, name: object) -> Chromosome:
         try:
@@ -265,7 +306,7 @@ class Genome:
         >>> Genome.bundled("mm39").autosomes[-1]
         'chr19'
         """
-        return [c.name for c in self if chrom_key(c.name).isdigit()]
+        return [c.name for c in self if chrom_key(c.name).isdecimal()]
 
     @classmethod
     def bundled(cls, assembly: str) -> Genome:
@@ -323,6 +364,8 @@ class Genome:
         ------
         KeyError
             If a chromosome in ``chroms`` is not in the file.
+        ValueError
+            If a line is malformed, or no chromosome is chosen by default.
 
         Examples
         --------
@@ -367,6 +410,9 @@ class Genome:
         ------
         KeyError
             If a chromosome in ``chroms`` is not in the file.
+        ValueError
+            If a line is malformed, a name repeats, or no chromosome is
+            chosen by default.
 
         Examples
         --------
@@ -397,6 +443,11 @@ class Genome:
         -------
         LinearGenome
 
+        Raises
+        ------
+        ValueError
+            If `gap` is negative or not finite.
+
         Examples
         --------
         >>> linear = Genome.bundled("hg38").concatenated(gap=5_000_000)
@@ -416,6 +467,11 @@ class LinearGenome:
     gap : float, default 0
         Space in bp between neighboring chromosomes.
 
+    Raises
+    ------
+    ValueError
+        If `gap` is negative or not finite.
+
     Examples
     --------
     >>> linear = LinearGenome(Genome([Chromosome("1", 100), Chromosome("2", 50)]), gap=10)
@@ -424,10 +480,14 @@ class LinearGenome:
     """
 
     def __init__(self, genome: Genome, gap: float = 0):
+        if not (np.isfinite(gap) and gap >= 0):
+            raise ValueError(f"gap must be a finite number of bp from 0 up, got {gap}")
         self.genome = genome
         starts = np.cumsum([0.0] + [c.length + gap for c in genome])
-        self._offsets = {chrom_key(c.name): start for c, start in zip(genome, starts, strict=False)}
-        self.length = float(starts[-1] - gap)
+        self._spans = {
+            chrom_key(c.name): (start, c.length) for c, start in zip(genome, starts, strict=False)
+        }
+        self.length = float(max(starts[-1] - gap, 0))
 
     def offset(self, chrom: str) -> float:
         """Return the axis position where a chromosome starts.
@@ -437,7 +497,10 @@ class LinearGenome:
         >>> LinearGenome(Genome([Chromosome("1", 100), Chromosome("2", 50)])).offset("chr2")
         100.0
         """
-        return float(self._offsets[chrom_key(chrom)])
+        try:
+            return float(self._spans[chrom_key(chrom)][0])
+        except KeyError:
+            raise KeyError(f"no chromosome {chrom!r} in genome") from None
 
     def position(self, chrom: object, pos: object) -> np.ndarray:
         """Map chromosome positions onto the concatenated axis.
@@ -452,8 +515,13 @@ class LinearGenome:
         Returns
         -------
         numpy.ndarray of float
-            Axis positions. NaN where the chromosome is not in the genome, so
-            matplotlib skips those points.
+            Axis positions. NaN where the chromosome is not in the genome or
+            the position lies outside it, so matplotlib skips those points.
+
+        Raises
+        ------
+        ValueError
+            If `chrom` and `pos` are arrays of different shapes.
 
         Examples
         --------
@@ -462,14 +530,26 @@ class LinearGenome:
         array([105.,   7.,  nan])
         """
         chroms = np.asarray(chrom).astype(str)
+        pos = np.asarray(pos, dtype=float)
+        if chroms.ndim and pos.ndim and chroms.shape != pos.shape:
+            raise ValueError(f"chrom and pos differ in length: {chroms.shape} and {pos.shape}")
         names, index = np.unique(chroms.ravel(), return_inverse=True)
-        offsets = np.array([self._offsets.get(chrom_key(n), np.nan) for n in names])
-        return offsets[index].reshape(chroms.shape) + np.asarray(pos, dtype=float)
+        spans = np.array(
+            [self._spans.get(chrom_key(n), (np.nan, np.nan)) for n in names], dtype=float
+        ).reshape(-1, 2)
+        offset, length = (spans[index, k].reshape(chroms.shape) for k in (0, 1))
+        return np.where((pos >= 0) & (pos <= length), offset + pos, np.nan)
 
 
 def _select(names: Iterable[str], chroms: Iterable[str] | None) -> list[str]:
     if chroms is None:
-        return sorted((n for n in names if PRIMARY.fullmatch(n)), key=natural_order)
+        chosen = sorted((n for n in names if PRIMARY.fullmatch(n)), key=natural_order)
+        if not chosen:
+            raise ValueError(
+                "no numbered, X, Y, Z or W chromosomes in file; pass chroms= to choose others"
+            )
+        return chosen
+    chroms = list(chroms)
     by_key = {chrom_key(n): n for n in names}
     missing = [c for c in chroms if chrom_key(c) not in by_key]
     if missing:
