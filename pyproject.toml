@@ -42,9 +42,9 @@ dev = [
 ]
 
 [tool.uv]
-# uv.lock records this window, and UV_EXCLUDE_NEWER overrides it, so both must spell it "1 week".
+# uv.lock records these, and UV_EXCLUDE_NEWER and ~/.config/uv/uv.toml override them locally. They must match.
 exclude-newer = "1 week"
-exclude-newer-package = { certifi = false }
+exclude-newer-package = { certifi = false, pip = false }
 
 [tool.uv.sources]
 poikilos = { git = "https://github.com/ramirc0/poikilos" }
