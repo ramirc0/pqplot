@@ -46,3 +46,31 @@ def test_read_centromeres_merges_rows_into_one_span(tmp_path):
     path = tmp_path / "centromeres.bed"
     path.write_text("chr1\t120\t130\nchr1\t100\t110\tname\nchr2\t5\t9\n")
     assert cytobands.read_centromeres(path) == {"chr1": (100, 130), "chr2": (5, 9)}
+
+
+def test_read_sizes_accepts_spaces_padding_and_a_byte_order_mark(tmp_path):
+    path = tmp_path / "x.chrom.sizes"
+    path.write_text("﻿chr1 1000\n  chr2\t500  \n", encoding="utf-8")
+    assert cytobands.read_sizes(path) == {"chr1": 1000, "chr2": 500}
+
+
+def test_read_centromeres_skips_track_and_browser_lines(tmp_path):
+    path = tmp_path / "centromeres.bed"
+    path.write_text('browser position chr1\ntrack name="cen"\nchr1 100 110\n')
+    assert cytobands.read_centromeres(path) == {"chr1": (100, 110)}
+
+
+@pytest.mark.parametrize(
+    ("reader", "text"),
+    [
+        (cytobands.read_sizes, "chr1\t1000\nchr2\n"),
+        (cytobands.read_sizes, "name\tlength\nchr1\t1000\n"),
+        (cytobands.read_centromeres, "chr1\t100\nchr2\t1\t2\n"),
+        (cytobands.read_bands, "chr1\t0\t10\tp11\tgneg\nchr1\t10\tq11\n"),
+    ],
+)
+def test_readers_name_the_file_and_line_of_a_bad_row(tmp_path, reader, text):
+    path = tmp_path / "table.txt"
+    path.write_text(text)
+    with pytest.raises(ValueError, match=r"table\.txt line [12]"):
+        reader(path)

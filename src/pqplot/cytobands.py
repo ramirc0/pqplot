@@ -5,7 +5,7 @@ The readers return every contig in a file. `Genome` picks the chromosomes.
 
 import gzip
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from os import PathLike
 
 type BandRow = tuple[int, int, str, str]
@@ -33,9 +33,9 @@ def read_bands(path: str | PathLike) -> dict[str, list[BandRow]]:
     (0, 2300000, 'p36.33', 'gneg')
     """
     rows = defaultdict(list)
-    for chrom, start, end, *rest in _fields(path):
-        name, stain = (rest + ["", ""])[:2]
-        rows[chrom].append((int(start), int(end), name, stain))
+    # Tabs only: unplaced contigs in UCSC tables have an empty band name.
+    for chrom, row in _records(path, 3, _band, separator="\t"):
+        rows[chrom].append(row)
     return dict(rows)
 
 
@@ -45,13 +45,18 @@ def read_sizes(path: str | PathLike) -> dict[str, int]:
     Parameters
     ----------
     path : str or PathLike
-        Tab-separated file, gzipped or plain, whose first two columns are the
-        chromosome name and its length.
+        File, gzipped or plain, whose first two columns are the chromosome
+        name and its length, separated by tabs or spaces.
 
     Returns
     -------
     dict of str to int
         Length of each chromosome, in file order.
+
+    Raises
+    ------
+    ValueError
+        If a line is malformed or a chromosome appears more than once.
 
     Examples
     --------
@@ -62,7 +67,12 @@ def read_sizes(path: str | PathLike) -> dict[str, int]:
     >>> read_sizes(path)
     {'chr1': 1000, 'chr2': 500}
     """
-    return {chrom: int(length) for chrom, length, *_ in _fields(path)}
+    sizes = {}
+    for chrom, length in _records(path, 2, lambda f: (f[0], int(f[1]))):
+        if chrom in sizes:
+            raise ValueError(f"{path}: chromosome {chrom!r} appears more than once")
+        sizes[chrom] = length
+    return sizes
 
 
 def read_centromeres(path: str | PathLike) -> dict[str, tuple[int, int]]:
@@ -72,7 +82,8 @@ def read_centromeres(path: str | PathLike) -> dict[str, tuple[int, int]]:
     ----------
     path : str or PathLike
         BED file, gzipped or plain. Several rows for one chromosome merge into
-        the span from their lowest start to their highest end.
+        the span from their lowest start to their highest end. Track and
+        browser lines are skipped.
 
     Returns
     -------
@@ -89,15 +100,33 @@ def read_centromeres(path: str | PathLike) -> dict[str, tuple[int, int]]:
     {'chr1': (100, 130)}
     """
     spans = {}
-    for chrom, start, end, *_ in _fields(path):
-        lo, hi = spans.get(chrom, (int(start), int(end)))
-        spans[chrom] = (min(lo, int(start)), max(hi, int(end)))
+    for chrom, start, end in _records(path, 3, lambda f: (f[0], int(f[1]), int(f[2]))):
+        lo, hi = spans.get(chrom, (start, end))
+        spans[chrom] = (min(lo, start), max(hi, end))
     return spans
 
 
-def _fields(path: str | PathLike) -> Iterator[list[str]]:
+def _band(fields: list[str]) -> tuple[str, BandRow]:
+    name, stain = (fields[3:] + ["", ""])[:2]
+    return fields[0], (int(fields[1]), int(fields[2]), name, stain)
+
+
+def _records[T](
+    path: str | PathLike,
+    columns: int,
+    parse: Callable[[list[str]], T],
+    separator: str | None = None,
+) -> Iterator[T]:
+    """Parse each data line, raising errors that name the file and line."""
     opener = gzip.open if str(path).endswith(".gz") else open
-    with opener(path, "rt") as handle:
-        for line in handle:
-            if line.strip() and not line.startswith("#"):
-                yield line.rstrip("\n").split("\t")
+    with opener(path, "rt", encoding="utf-8-sig") as handle:
+        for number, line in enumerate(handle, 1):
+            if not line.strip() or line.startswith(("#", "track", "browser")):
+                continue
+            fields = [field.strip() for field in line.rstrip("\r\n").split(separator)]
+            try:
+                if len(fields) < columns:
+                    raise ValueError(f"expected {columns} columns")
+                yield parse(fields)
+            except ValueError as error:
+                raise ValueError(f"{path} line {number}: {error}: {line.strip()!r}") from None
