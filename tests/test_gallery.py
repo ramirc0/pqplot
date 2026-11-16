@@ -20,6 +20,6 @@ pytestmark = [
 
 
 @pytest.mark.parametrize("script", SCRIPTS, ids=lambda path: path.stem)
-@pytest.mark.mpl_image_compare(baseline_dir="baseline", style=STYLE, savefig_kwargs={"dpi": 200})
+@pytest.mark.mpl_image_compare(baseline_dir="baseline", style=STYLE, savefig_kwargs={"dpi": 300})
 def test_gallery(script):
     return runpy.run_path(str(script))["fig"]
