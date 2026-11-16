@@ -403,6 +403,8 @@ class TrackPanels:
     ) -> ScalarMappable:
         """Color each bin across the full track width by its value.
 
+        The track's value axis is hidden.
+
         Parameters
         ----------
         data : DataFrame or dict, optional
@@ -436,6 +438,7 @@ class TrackPanels:
         starts, ends = column(data, start).astype(float), column(data, end).astype(float)
         values = column(data, value).astype(float)
         scale = value_scale(values, cmap, norm)
+        self._hide_values()
         for _, panel, rows in self._groups(data, chrom):
             colors = scale.to_rgba(values[rows])
             self._add_spans(panel, starts[rows], ends[rows], colors, 0.0, **kwargs)
@@ -455,7 +458,8 @@ class TrackPanels:
         """Draw a box across the track width over each interval.
 
         Intervals narrower than `MIN_PAINT_POINTS` widen at draw time, so
-        small features such as peaks stay visible.
+        small features such as peaks stay visible. The track's value axis is
+        hidden.
 
         Parameters
         ----------
@@ -496,6 +500,7 @@ class TrackPanels:
         starts, ends = column(data, start).astype(float), column(data, end).astype(float)
         categories = None if color is None else column(data, color)
         codes, swatches = category_colors(categories, len(starts), palette, self._legend)
+        self._hide_values()
         return {
             name: self._add_spans(
                 panel, starts[rows], ends[rows], swatches[codes[rows]], MIN_PAINT_POINTS, **kwargs
@@ -514,7 +519,7 @@ class TrackPanels:
         return (values, along) if self._orientation == "vertical" else (along, values)
 
     def _hide_values(self) -> None:
-        """Hide the value axis, which means nothing for marks and labels."""
+        """Hide the value axis, which means nothing for layers without a value scale."""
         for _, panel in self._panels.values():
             (panel.xaxis if self._orientation == "vertical" else panel.yaxis).set_visible(False)
 

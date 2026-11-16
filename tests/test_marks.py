@@ -128,10 +128,22 @@ def test_mark_legend_handles_match_the_mark_size():
     assert handle.get_markersize() == pytest.approx(5)
 
 
+SPANS = {"chrom": ["chr1", "chr2"], "start": [1e6, 3e6], "end": [2e6, 4e6], "value": [1.0, 2.0]}
+
+
+@pytest.mark.parametrize("orientation", ["vertical", "horizontal"])
 @pytest.mark.parametrize(
-    "draw", [lambda track: track.mark(HITS), lambda track: track.label(HITS, text="gene")]
+    "draw",
+    [
+        lambda track: track.mark(HITS),
+        lambda track: track.label(HITS, text="gene"),
+        lambda track: track.intervals(SPANS),
+        lambda track: track.heatmap(SPANS),
+    ],
+    ids=["mark", "label", "intervals", "heatmap"],
 )
-def test_marks_and_labels_hide_the_track_value_axis(draw):
-    kary = karyogram()
+def test_layers_without_a_value_scale_hide_the_track_value_axis(draw, orientation):
+    kary = karyogram(orientation)
     draw(kary.track("hits"))
-    assert not any(p.xaxis.get_visible() for p in kary.panels("hits").values())
+    value = "xaxis" if orientation == "vertical" else "yaxis"
+    assert not any(getattr(p, value).get_visible() for p in kary.panels("hits").values())

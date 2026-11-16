@@ -10,6 +10,11 @@ document.
 
 ## [Unreleased]
 
+### Fixed
+
+- `TrackPanels.heatmap` and `TrackPanels.intervals` hide the track's value
+  axis, as `mark` and `label` do. It showed a meaningless 0 to 1 scale.
+
 ## [0.1.0] - 2026-11-15
 
 ### Added
