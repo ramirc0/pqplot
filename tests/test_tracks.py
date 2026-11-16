@@ -3,10 +3,10 @@ import polars as pl
 import pytest
 from matplotlib.colors import to_rgba
 
-import pqplot as kp
+import pqplot as pqp
 
-HG38 = kp.Genome.bundled("hg38")
-TRACKS = [kp.Track("genes"), kp.Track("cnv", side="below")]
+HG38 = pqp.Genome.bundled("hg38")
+TRACKS = [pqp.Track("genes"), pqp.Track("cnv", side="below")]
 POINTS = {
     "chrom": ["chr2", "chr1", "chr1", "chrM"],
     "pos": [5e6, 3e6, 1e6, 10.0],
@@ -21,7 +21,7 @@ BINS = {
 
 
 def karyogram(orientation="vertical"):
-    return kp.Karyogram(HG38, chroms=["1", "2"], orientation=orientation, tracks=TRACKS)
+    return pqp.Karyogram(HG38, chroms=["1", "2"], orientation=orientation, tracks=TRACKS)
 
 
 def test_scatter_puts_values_across_a_vertical_track():
@@ -116,7 +116,7 @@ def test_scatter_markers_have_no_halo_unless_asked():
 
 @pytest.mark.parametrize("orientation", ["vertical", "horizontal"])
 def test_value_axis_labels_clear_the_chromosome_names(orientation):
-    kary = kp.Karyogram(HG38, orientation=orientation, rows=2, tracks=TRACKS)
+    kary = pqp.Karyogram(HG38, orientation=orientation, rows=2, tracks=TRACKS)
     kary.track("cnv").scatter(POINTS, pos="pos", value="log2")
     kary.figure.draw_without_rendering()
     renderer = kary.figure.canvas.get_renderer()
