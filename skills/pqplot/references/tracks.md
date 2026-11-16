@@ -80,7 +80,8 @@ kary.panel("chr1", track="cnv").set_ylim(-2, 2)  # horizontal: values on y; shar
   For a colorbar, pass any of the returned collections:
   `kary.colorbar(next(iter(points.values())), label="log2")`.
 - Markers have no edge by default. Pass `linewidths=` for one.
-- `area` bins of one chromosome must not overlap. Gaps stay empty.
+- `area` bins of one chromosome must not overlap. Overlapping or reversed
+  bins raise `ValueError` naming the chromosome. Gaps stay empty.
   `baseline=` moves the fill origin, for example to 0 for signed values.
 - `heatmap` returns the `ScalarMappable` for `kary.colorbar`. It takes `cmap`
   and `norm` like `paint`.

@@ -36,8 +36,9 @@ pqp.chromosome_axis(linear, ax)
   the genome's order. `gap` is bp between neighbors. A gap of about 0.2% of
   the genome length separates them visibly.
 - `linear.position(chrom, pos)` maps arrays (or Series) to axis positions. It
-  returns NaN for chromosomes not in the genome, and matplotlib then skips
-  those points silently. Count the NaNs if the data might use other names.
+  returns NaN for chromosomes not in the genome and for positions outside
+  their chromosome, and matplotlib then skips those points silently. Count
+  the NaNs: many of them mean other names or another assembly.
 - `linear.offset(chrom)` is where a chromosome starts, and `linear.length` is
   the full axis. Use them to place lines or text at a chromosome.
 - `chromosome_axis(linear, ax, *, shade=True)` sets ticks at the chromosome

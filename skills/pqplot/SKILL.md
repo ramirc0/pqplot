@@ -42,36 +42,41 @@ A karyogram with tracks needs both `karyogram.md` and `tracks.md`.
    `value="value"` and `text="text"`. Rename columns or pass the names.
 2. **Extra keyword arguments are not columns.** `c=`, `s=` and other
    matplotlib arguments go straight to matplotlib. `c="log2"` raises. Pass the
-   array (`c=df["log2"]`). Arrays with one value per row are split by
-   chromosome for you.
-3. **Unmatched rows vanish silently.** Names match across `chr1`/`1` and
-   `chrM`/`MT` only. `Chr1`, `CHR1`, RefSeq accessions (`NC_000001.11`),
+   array (`c=df["log2"]`). Arrays and lists with one value per row are split
+   by chromosome for you.
+3. **Unmatched rows vanish silently.** Names match across `chr1`/`1`/`1.0`
+   and `chrM`/`MT` only. `Chr1`, `CHR1`, RefSeq accessions (`NC_000001.11`),
    unplaced contigs, null chromosomes and chromosomes not drawn are skipped
-   without a warning. Normalize names first. Count the rows whose chromosome
-   is not in the genome, and report them.
+   without a warning. So are rows with a missing position, span, category or
+   text. Normalize names first. Count the rows that will be skipped, and
+   report them. Legends and color scales count only the drawn rows.
 4. **Positions are bp, as given.** Nothing shifts between 0-based and 1-based.
    `Region.parse("chr1:100-200")` keeps 100 and 200.
-5. **Panels are child Axes.** Karyogram panels are not in `fig.axes`, and
+5. **Bad input raises.** Columns of different lengths, a missing column,
+   duplicate chromosomes, reversed spans, overlapping `area` bins, empty
+   genomes and a `legend()` with no categories raise `ValueError` or
+   `KeyError` with the cause. Read the message and fix the data.
+6. **Panels are child Axes.** Karyogram panels are not in `fig.axes`, and
    `plt.gca()` returns the hidden host. Get them with
    `kary.panel(chrom, track=None)` or `kary.panels(track=None)`.
-6. **The value axis turns with the karyogram.** In a vertical karyogram, bp
+7. **The value axis turns with the karyogram.** In a vertical karyogram, bp
    runs down y (inverted) and track values run along x, so use `set_xlim`. In
    a horizontal one, use `set_ylim`. Panels of one track share their value
    axis, so one call sets them all.
-7. **Set the theme first.** Band, outline and default category colors come
+8. **Set the theme first.** Band, outline and default category colors come
    from `rcParams` when the artists are made. Apply a style (for example
    `poikilos`) before building the figure.
-8. **Own figure or yours.** With `ax=None`, the figure uses the constrained
-   layout and widens for a legend or colorbar, so the chromosomes keep their
-   size. With `ax=`, you own the figure size and nothing widens.
-9. **Legend and colorbar share a corner.** Both sit at the top right of the
+9. **Own figure or yours.** With `ax=None`, the figure uses the constrained
+   layout and grows for a legend or colorbar, so the chromosomes keep their
+   size. With `ax=`, you own the figure size and nothing grows.
+10. **Legend and colorbar share a corner.** Both sit at the top right of the
    karyogram. Draw one, or move the legend with `loc=` and `bbox_to_anchor=`.
-10. **Labels do not count in the layout.** Size a label track to the longest
+11. **Labels do not count in the layout.** Size a label track to the longest
     label (`size=5` fits about six characters at the default font). Labels
     that still do not fit are hidden from the last row up, with a
     `UserWarning`. Put the important rows first. Under `pytest -W error` that
     warning fails the test.
-11. **Bundled genomes are primary only.** They hold 1 to 22 (19 in mouse), X
+12. **Bundled genomes are primary only.** They hold 1 to 22 (19 in mouse), X
     and Y. They have no chrM and no unplaced or alt contigs.
 
 ## Workflow

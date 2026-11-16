@@ -129,14 +129,16 @@ kary.legend(title="Ancestry")
 ## Legend and colorbar
 
 - `kary.legend(title=None, **kwargs)` lists every category painted, marked or
-  drawn as intervals so far, in one legend. Call it after all layers. Calling
-  it again replaces it. Defaults: outside the top right, no frame.
+  drawn as intervals so far, in one legend. A category keeps one color across
+  calls. Call it after all layers. Calling it again replaces it. With no
+  categories drawn yet it raises `ValueError`. Defaults: outside the top
+  right, no frame.
 - `kary.colorbar(mappable, label=None, **kwargs)` puts a 7 x 144 point bar
   right of the karyogram, top-aligned. It takes the return value of `paint`
-  with `value=` or of a track's `heatmap`.
+  with `value=` or of a track's `heatmap`. Calling it again replaces the bar.
 - Both sit at the top right. To show both, move the legend, for example
   `kary.legend(loc="lower left", bbox_to_anchor=(1, 0))`.
-- In a karyogram's own figure, both widen the figure so chromosomes keep
+- In a karyogram's own figure, both grow the figure so chromosomes keep
   their size. With `ax=`, leave room yourself.
 
 ## Drawing into panels

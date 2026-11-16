@@ -19,7 +19,9 @@ hg38["1"].length, hg38["chr1"].centromere  # names match across chr1 and 1
 
 From a sizes or FASTA index file. The genome is unbanded. By default it keeps
 the primary chromosomes (numbered, X, Y, Z, W) in natural order and drops
-contigs.
+contigs. A file with none of them, such as `Chr1` or `2L` names, raises
+`ValueError`. Pass `chroms=` then. Columns may be separated by tabs or
+spaces. A malformed line raises an error naming the file and line.
 
 ```python
 import tempfile
@@ -93,8 +95,11 @@ kary.track("hits").mark(chrom=np.array(["1", "chr9"]), pos=np.array([55e6, 22e6]
 - polars, pandas, pyarrow tables and dicts of lists or arrays all work.
 - Default names: `chrom`, `pos`, `start`, `end`, `value`, `text`.
 - Rows of one chromosome can come in any order.
-- Clean before drawing. Null chromosomes are skipped. Null values become NaN,
-  which leaves a gap.
+- Columns must have one length, or the call raises `ValueError`.
+- Rows with a null chromosome, position, span, category or text are skipped.
+  A null value leaves a gap. Only drawn rows enter legends and color scales.
+- A float chromosome column (an int column with nulls) matches: `1.0` is
+  chromosome 1.
 
 Check what will be dropped before you plot:
 
