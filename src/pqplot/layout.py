@@ -23,6 +23,8 @@ COLUMN_GAP = 1.0
 """Space between chromosomes of one group, in body widths."""
 GROUP_GAP = 24.0
 """Space between groups, in points. It holds the chromosome names."""
+MAX_BODY_POINTS = 14.0
+"""Widest body, in points. Columns center in a host wider than that allows."""
 
 Align = Literal["start", "centromere", "end"]
 
@@ -160,7 +162,7 @@ class Grid:
 
     Groups share one bp scale and fill the along extent between gaps of
     `GROUP_GAP` points. Columns share one body width and fill the across
-    extent.
+    extent, up to bodies `MAX_BODY_POINTS` wide. Beyond that they center.
 
     Parameters
     ----------
@@ -223,8 +225,9 @@ class Grid:
         gaps = (len(self.spans) - 1) * GROUP_GAP
         points_per_bp = max(along - gaps, 0.0) / sum(self.spans)
         a0 = sum(self.spans[:group]) * points_per_bp + group * GROUP_GAP
-        unit = across / (self.columns * self.width + (self.columns - 1) * COLUMN_GAP)
-        c0 = (column * (self.width + COLUMN_GAP) + slot.start) * unit
+        bodies = self.columns * self.width + (self.columns - 1) * COLUMN_GAP
+        unit = min(across / bodies, MAX_BODY_POINTS)
+        c0 = (across - bodies * unit) / 2 + (column * (self.width + COLUMN_GAP) + slot.start) * unit
         return a0, a0 + self.spans[group] * points_per_bp, c0, c0 + slot.size * unit
 
     def extent(self, points_per_bp: float, points_per_body: float) -> tuple[float, float]:

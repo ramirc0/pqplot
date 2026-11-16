@@ -76,17 +76,26 @@ def test_groups_share_one_bp_scale_and_fill_the_along_extent():
     assert (a1 - a0) / 1000 == pytest.approx((b1 - b0) / 500)
 
 
-def test_columns_fill_the_across_extent():
+def test_columns_fill_a_narrow_across_extent():
     g = grid()
     body = g.slots[0]
-    first = g.cell(0, 0, body, along=400, across=100)
-    last = g.cell(0, 2, body, along=400, across=100)
+    first = g.cell(0, 0, body, along=400, across=50)
+    last = g.cell(0, 2, body, along=400, across=50)
     assert first[2] == 0
-    assert last[3] == pytest.approx(100)
+    assert last[3] == pytest.approx(50)
     unit = first[3] - first[2]
-    assert g.cell(0, 1, body, along=400, across=100)[2] - first[3] == pytest.approx(
+    assert g.cell(0, 1, body, along=400, across=50)[2] - first[3] == pytest.approx(
         layout.COLUMN_GAP * unit
     )
+
+
+def test_bodies_stop_widening_and_center_in_a_wide_across_extent():
+    g = grid()
+    body = g.slots[0]
+    first = g.cell(0, 0, body, along=400, across=1000)
+    last = g.cell(0, 2, body, along=400, across=1000)
+    assert first[3] - first[2] == pytest.approx(layout.MAX_BODY_POINTS)
+    assert first[2] == pytest.approx(1000 - last[3])
 
 
 def test_extent_measures_the_grid_at_a_given_scale():
