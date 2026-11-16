@@ -16,9 +16,9 @@ from matplotlib.text import Text
 from matplotlib.transforms import IdentityTransform
 from matplotlib.typing import ColorType
 
-from karyogram_plot import outline
-from karyogram_plot.genome import Chromosome, LinearGenome, Region, Stain, chrom_key
-from karyogram_plot.spans import Spans
+from pqplot import outline
+from pqplot.genome import Chromosome, LinearGenome, Region, Stain, chrom_key
+from pqplot.spans import Spans
 
 STAIN_COLORS = {"acen": "#b5524a", "gvar": "#c8d1dc", "stalk": "#7f8fa6"}
 """Colors of stains that are not G-bands. G-bands blend the theme's colors."""
@@ -69,13 +69,13 @@ class Ideogram(PathPatch):
     ----------
     chromosome : Chromosome
         The chromosome drawn.
-    bands : karyogram_plot.spans.Spans
+    bands : pqplot.spans.Spans
         Band fills, one polygon per band.
 
     Examples
     --------
     >>> import matplotlib.pyplot as plt
-    >>> from karyogram_plot import Genome
+    >>> from pqplot import Genome
     >>> fig, ax = plt.subplots()
     >>> ideo = Ideogram(Genome.bundled("hg38")["chr17"], ax)
     >>> len(ideo.bands.get_paths())
@@ -163,7 +163,7 @@ class Ideogram(PathPatch):
         Examples
         --------
         >>> import matplotlib.pyplot as plt
-        >>> from karyogram_plot import Chromosome
+        >>> from pqplot import Chromosome
         >>> fig, ax = plt.subplots()
         >>> Ideogram(Chromosome("chr1", 100), ax, offset=10, half=0.4).xy([5], [1]).tolist()
         [[15.0, 0.4]]
@@ -194,7 +194,7 @@ class Ideogram(PathPatch):
 
         Returns
         -------
-        karyogram_plot.spans.Spans
+        pqplot.spans.Spans
             The fills, widest first.
 
         Raises
@@ -204,7 +204,7 @@ class Ideogram(PathPatch):
 
         Examples
         --------
-        >>> from karyogram_plot import Genome
+        >>> from pqplot import Genome
         >>> ideo = ideogram(Genome.bundled("hg38")["chr9"])
         >>> fills = ideo.paint([0, 1e8], [4e7, 1.2e8], ["tab:red", "tab:blue"])
         >>> len(fills.get_facecolors())
@@ -244,7 +244,7 @@ class Ideogram(PathPatch):
         Examples
         --------
         >>> import matplotlib.pyplot as plt
-        >>> from karyogram_plot import Chromosome
+        >>> from pqplot import Chromosome
         >>> fig, ax = plt.subplots()
         >>> Ideogram(Chromosome("chr1", 100), ax).get_path().vertices.shape[1]
         2
@@ -284,7 +284,7 @@ class Ideogram(PathPatch):
         Examples
         --------
         >>> import matplotlib.pyplot as plt
-        >>> from karyogram_plot import Genome, Region
+        >>> from pqplot import Genome, Region
         >>> locus = Region.parse("chr17:43,044,295-43,125,483")
         >>> fig, (head, body) = plt.subplots(2, 1, height_ratios=[1, 5])
         >>> ideo = ideogram(Genome.bundled("hg38")[locus.chrom], ax=head)
@@ -464,7 +464,7 @@ def ideogram(
 
     Examples
     --------
-    >>> from karyogram_plot import Genome
+    >>> from pqplot import Genome
     >>> ideo = ideogram(Genome.bundled("hg38")["chr17"])
     >>> ideo.axes.get_xlim() == (0, ideo.chromosome.length)
     True
@@ -514,7 +514,7 @@ def genome_strip(
 
     Examples
     --------
-    >>> from karyogram_plot import Genome
+    >>> from pqplot import Genome
     >>> strip = genome_strip(Genome.bundled("mm39").concatenated(gap=5_000_000))
     >>> len(strip), strip[1].offset
     (21, 200154279.0)
@@ -567,7 +567,7 @@ def chromosome_axis(
     Examples
     --------
     >>> import matplotlib.pyplot as plt
-    >>> from karyogram_plot import Genome
+    >>> from pqplot import Genome
     >>> linear = Genome.bundled("hg38").concatenated(gap=5_000_000)
     >>> fig, ax = plt.subplots()
     >>> _ = ax.scatter(linear.position(["chr1", "chr2"], [1e6, 5e7]), [3.0, 8.0])

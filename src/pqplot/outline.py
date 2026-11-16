@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from karyogram_plot.genome import Chromosome
+from pqplot.genome import Chromosome
 
 PINCH = 0.42
 """Half-width at the centromere midpoint."""

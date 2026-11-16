@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from karyogram_plot import outline
-from karyogram_plot.genome import Band, Chromosome, Stain
+from pqplot import outline
+from pqplot.genome import Band, Chromosome, Stain
 
 CAP = 10.0
 

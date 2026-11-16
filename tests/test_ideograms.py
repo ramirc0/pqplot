@@ -4,8 +4,8 @@ import poikilos as pk
 import pytest
 from matplotlib.colors import to_rgba
 
-import karyogram_plot as kp
-from karyogram_plot import ideograms, outline
+import pqplot as kp
+from pqplot import ideograms, outline
 
 HG38 = kp.Genome.bundled("hg38")
 BRCA1 = kp.Region.parse("chr17:43,044,295-43,125,483")

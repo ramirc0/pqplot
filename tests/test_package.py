@@ -1,5 +1,5 @@
-import karyogram_plot
+import pqplot
 
 
 def test_package_imports():
-    assert karyogram_plot.__doc__
+    assert pqplot.__doc__

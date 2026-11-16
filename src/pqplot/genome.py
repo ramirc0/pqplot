@@ -10,7 +10,7 @@ from os import PathLike
 
 import numpy as np
 
-from karyogram_plot import cytobands
+from pqplot import cytobands
 
 BUNDLED = {
     "hg19": "hg19/cytoBand.txt.gz",
@@ -294,7 +294,7 @@ class Genome:
         """
         if assembly not in BUNDLED:
             raise ValueError(f"no bundled assembly {assembly!r}; choose from {list(BUNDLED)}")
-        with as_file(files("karyogram_plot") / "data" / BUNDLED[assembly]) as path:
+        with as_file(files("pqplot") / "data" / BUNDLED[assembly]) as path:
             return cls.from_cytobands(path)
 
     @classmethod
@@ -327,7 +327,7 @@ class Genome:
         Examples
         --------
         >>> from importlib.resources import files
-        >>> path = files("karyogram_plot") / "data/hg38/cytoBand.txt.gz"
+        >>> path = files("pqplot") / "data/hg38/cytoBand.txt.gz"
         >>> [c.name for c in Genome.from_cytobands(path, chroms=["X", "Y"])]
         ['chrX', 'chrY']
         """

@@ -28,7 +28,7 @@ def read_bands(path: str | PathLike) -> dict[str, list[BandRow]]:
     Examples
     --------
     >>> from importlib.resources import files
-    >>> bands = read_bands(files("karyogram_plot") / "data/hg38/cytoBand.txt.gz")
+    >>> bands = read_bands(files("pqplot") / "data/hg38/cytoBand.txt.gz")
     >>> bands["chr1"][0]
     (0, 2300000, 'p36.33', 'gneg')
     """

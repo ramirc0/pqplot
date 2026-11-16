@@ -3,8 +3,8 @@ import gzip
 import numpy as np
 import pytest
 
-from karyogram_plot import Band, Chromosome, Genome, Region, Stain
-from karyogram_plot.genome import chrom_key, natural_order
+from pqplot import Band, Chromosome, Genome, Region, Stain
+from pqplot.genome import chrom_key, natural_order
 
 ASSEMBLIES = ["hg19", "hg38", "hs1", "mm10", "mm39"]
 

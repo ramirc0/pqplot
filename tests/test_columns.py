@@ -3,7 +3,7 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from karyogram_plot.columns import column, rows_by_chrom
+from pqplot.columns import column, rows_by_chrom
 
 TABLE = {"chrom": ["chr2", "1", "chr1", "chrM"], "pos": [5, 7, 3, 9]}
 

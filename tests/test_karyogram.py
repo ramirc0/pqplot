@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-import karyogram_plot as kp
+import pqplot as kp
 
 HG38 = kp.Genome.bundled("hg38")
 MM39 = kp.Genome.bundled("mm39")

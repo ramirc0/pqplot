@@ -2,8 +2,8 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from karyogram_plot import layout
-from karyogram_plot.genome import Chromosome
+from pqplot import layout
+from pqplot.genome import Chromosome
 
 ROW = [
     Chromosome("1", 1000, centromere=(400, 500)),

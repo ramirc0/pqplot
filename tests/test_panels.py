@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from karyogram_plot.panels import add_panel
+from pqplot.panels import add_panel
 
 
 def top_half(along, across):

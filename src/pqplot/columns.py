@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from karyogram_plot.genome import chrom_key
+from pqplot.genome import chrom_key
 
 
 def column(table: object, spec: object) -> np.ndarray:
@@ -52,7 +52,7 @@ def rows_by_chrom(chroms: np.ndarray) -> dict[str, np.ndarray]:
     Returns
     -------
     dict of str to numpy.ndarray
-        Row indices in input order, keyed by `karyogram_plot.genome.chrom_key`.
+        Row indices in input order, keyed by `pqplot.genome.chrom_key`.
 
     Examples
     --------

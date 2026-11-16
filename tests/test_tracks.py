@@ -3,7 +3,7 @@ import polars as pl
 import pytest
 from matplotlib.colors import to_rgba
 
-import karyogram_plot as kp
+import pqplot as kp
 
 HG38 = kp.Genome.bundled("hg38")
 TRACKS = [kp.Track("genes"), kp.Track("cnv", side="below")]

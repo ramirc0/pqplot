@@ -1,5 +1,5 @@
 [project]
-name = "karyogram-plot"
+name = "pqplot"
 version = "0.0.0"
 description = "Chromosome ideograms and karyograms for matplotlib."
 license = "MIT"

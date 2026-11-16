@@ -20,12 +20,12 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, StepPatch
 from matplotlib.typing import ColorType
 
-from karyogram_plot import layout
-from karyogram_plot.columns import column, rows_by_chrom
-from karyogram_plot.genome import Chromosome, Genome, chrom_key
-from karyogram_plot.ideograms import MIN_PAINT_POINTS, Ideogram
-from karyogram_plot.panels import Orientation, add_panel
-from karyogram_plot.spans import Spans
+from pqplot import layout
+from pqplot.columns import column, rows_by_chrom
+from pqplot.genome import Chromosome, Genome, chrom_key
+from pqplot.ideograms import MIN_PAINT_POINTS, Ideogram
+from pqplot.panels import Orientation, add_panel
+from pqplot.spans import Spans
 
 BODY_POINTS = 7.0
 """Body width in a karyogram's own figure, in points."""
@@ -115,7 +115,7 @@ class Karyogram:
 
     Examples
     --------
-    >>> from karyogram_plot import Genome
+    >>> from pqplot import Genome
     >>> kary = Karyogram(Genome.bundled("hg38"), rows=2, align="centromere")
     >>> len(kary.panels())
     24
@@ -199,7 +199,7 @@ class Karyogram:
 
         Examples
         --------
-        >>> from karyogram_plot import Genome
+        >>> from pqplot import Genome
         >>> Karyogram(Genome.bundled("mm39")).figure.get_layout_engine() is not None
         True
         """
@@ -227,7 +227,7 @@ class Karyogram:
 
         Examples
         --------
-        >>> from karyogram_plot import Genome
+        >>> from pqplot import Genome
         >>> hg38 = Genome.bundled("hg38")
         >>> kary = Karyogram(hg38, orientation="horizontal")
         >>> kary.panel("chr17").get_xlim() == (0, hg38["chr1"].length)
@@ -253,7 +253,7 @@ class Karyogram:
 
         Examples
         --------
-        >>> from karyogram_plot import Genome
+        >>> from pqplot import Genome
         >>> kary = Karyogram(Genome.bundled("hg38"), chroms=["1", "2"], tracks=[Track("cnv")])
         >>> list(kary.panels("cnv"))
         ['chr1', 'chr2']
@@ -283,7 +283,7 @@ class Karyogram:
 
         Examples
         --------
-        >>> from karyogram_plot import Genome
+        >>> from pqplot import Genome
         >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("cnv")])
         >>> points = kary.track("cnv").scatter({"chrom": ["chr1"], "pos": [5e6], "value": [0.3]})
         >>> list(points)
@@ -309,7 +309,7 @@ class Karyogram:
 
         Examples
         --------
-        >>> from karyogram_plot import Genome
+        >>> from pqplot import Genome
         >>> len(Karyogram(Genome.bundled("hg38"), copies=2).ideograms("chrX"))
         2
         """
@@ -379,7 +379,7 @@ class Karyogram:
 
         Examples
         --------
-        >>> from karyogram_plot import Genome
+        >>> from pqplot import Genome
         >>> kary = Karyogram(Genome.bundled("hg38"), rows=2)
         >>> segments = {"chrom": ["chr1", "chr7"], "start": [0, 5e6], "end": [4e7, 9e6],
         ...             "state": ["gain", "loss"]}
@@ -445,7 +445,7 @@ class Karyogram:
 
         Examples
         --------
-        >>> from karyogram_plot import Genome
+        >>> from pqplot import Genome
         >>> kary = Karyogram(Genome.bundled("hg38"), chroms=["1"])
         >>> kary.paint({"chrom": ["1"], "split": ["test"]}, color="split")
         >>> [t.get_text() for t in kary.legend(title="Split").get_texts()]
@@ -492,7 +492,7 @@ class TrackPanels:
 
     Examples
     --------
-    >>> from karyogram_plot import Genome
+    >>> from pqplot import Genome
     >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("cnv")])
     >>> type(kary.track("cnv")).__name__
     'TrackPanels'
@@ -541,7 +541,7 @@ class TrackPanels:
 
         Examples
         --------
-        >>> from karyogram_plot import Genome
+        >>> from pqplot import Genome
         >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("cnv")])
         >>> import numpy as np
         >>> bins = {"chrom": ["1", "2"], "mid": [5e5, 7e5], "log2": np.array([0.4, -1.2])}
@@ -596,7 +596,7 @@ class TrackPanels:
 
         Examples
         --------
-        >>> from karyogram_plot import Genome
+        >>> from pqplot import Genome
         >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("gc")])
         >>> gc = {"chrom": ["1", "1"], "pos": [2e6, 1e6], "value": [0.41, 0.38]}
         >>> kary.track("gc").line(gc)["chr1"].get_ydata().tolist()
@@ -647,7 +647,7 @@ class TrackPanels:
 
         Examples
         --------
-        >>> from karyogram_plot import Genome
+        >>> from pqplot import Genome
         >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("genes")])
         >>> density = {"chrom": ["1", "1"], "start": [0, 1e6], "end": [1e6, 2e6], "value": [3, 8]}
         >>> kary.track("genes").area(density)["chr1"].get_data().edges.tolist()
@@ -694,7 +694,7 @@ class TrackPanels:
         norm : matplotlib.colors.Normalize, optional
             Scaling of `value`. By default, its minimum to its maximum.
         **kwargs
-            Passed to `karyogram_plot.spans.Spans`.
+            Passed to `pqplot.spans.Spans`.
 
         Returns
         -------
@@ -703,7 +703,7 @@ class TrackPanels:
 
         Examples
         --------
-        >>> from karyogram_plot import Genome
+        >>> from pqplot import Genome
         >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("expr")])
         >>> bins = {"chrom": ["1", "1"], "start": [0, 1e6], "end": [1e6, 2e6], "value": [3, 8]}
         >>> kary.track("expr").heatmap(bins, cmap="magma").norm.vmax
@@ -749,11 +749,11 @@ class TrackPanels:
             Color of each category, in legend order. By default, the
             theme's color cycle in order of first appearance.
         **kwargs
-            Passed to `karyogram_plot.spans.Spans`.
+            Passed to `pqplot.spans.Spans`.
 
         Returns
         -------
-        dict of str to karyogram_plot.spans.Spans
+        dict of str to pqplot.spans.Spans
             Boxes keyed by chromosome name.
 
         Raises
@@ -763,7 +763,7 @@ class TrackPanels:
 
         Examples
         --------
-        >>> from karyogram_plot import Genome
+        >>> from pqplot import Genome
         >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("peaks")])
         >>> peaks = {"chrom": ["1", "2"], "start": [1e6, 3e6], "end": [1.0002e6, 3.0001e6]}
         >>> list(kary.track("peaks").intervals(peaks))

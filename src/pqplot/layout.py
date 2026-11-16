@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from karyogram_plot.genome import Chromosome
+from pqplot.genome import Chromosome
 
 TRACK_GAP = 0.2
 """Space between slots of one chromosome, in body widths."""

@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from karyogram_plot.spans import Spans
+from pqplot.spans import Spans
 
 
 def along_pixels(spans, orientation):

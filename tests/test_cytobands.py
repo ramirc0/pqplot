@@ -2,7 +2,7 @@ import gzip
 
 import pytest
 
-from karyogram_plot import cytobands
+from pqplot import cytobands
 
 
 @pytest.fixture
