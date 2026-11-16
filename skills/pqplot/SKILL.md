@@ -18,7 +18,7 @@ hg38 = pqp.Genome.bundled("hg38")
 ```
 
 Install with `uv add pqplot`. Python 3.12 or later, matplotlib 3.10 or later.
-These references match **pqplot 0.1.0**. Check `importlib.metadata.version("pqplot")`
+These references match **pqplot 0.3.0**. Check `importlib.metadata.version("pqplot")`
 and re-verify behavior if it differs.
 
 ## Task to reference
