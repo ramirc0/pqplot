@@ -18,6 +18,7 @@ from matplotlib.typing import ColorType
 
 from karyogram_plot import outline
 from karyogram_plot.genome import Chromosome, LinearGenome, Region, Stain, chrom_key
+from karyogram_plot.spans import Spans
 
 STAIN_COLORS = {"acen": "#b5524a", "gvar": "#c8d1dc", "stalk": "#7f8fa6"}
 """Colors of stains that are not G-bands. G-bands blend the theme's colors."""
@@ -68,7 +69,7 @@ class Ideogram(PathPatch):
     ----------
     chromosome : Chromosome
         The chromosome drawn.
-    bands : matplotlib.collections.PolyCollection
+    bands : karyogram_plot.spans.Spans
         Band fills, one polygon per band.
 
     Examples
@@ -114,8 +115,12 @@ class Ideogram(PathPatch):
         ax.autoscale_view()
         starts, ends, colors = _spans(chromosome, bands)
         # A thin edge in each band's own color hides seams in PDF viewers.
-        self.bands = PolyCollection(
-            _quads(self, starts, ends),
+        self.bands = Spans(
+            starts + offset,
+            ends + offset,
+            self._overshoot(),
+            orientation=orientation,
+            min_points=0,
             facecolors=colors,
             edgecolors=colors,
             linewidths=0.25,
@@ -170,7 +175,7 @@ class Ideogram(PathPatch):
         pair = (along, across) if self.orientation == "horizontal" else (across, along)
         return np.stack(pair, axis=-1)
 
-    def paint(self, starts: object, ends: object, colors: object, **kwargs) -> PolyCollection:
+    def paint(self, starts: object, ends: object, colors: object, **kwargs) -> Spans:
         """Fill spans of the body with color, over the bands.
 
         Spans narrower than `MIN_PAINT_POINTS` widen about their middle at
@@ -189,7 +194,7 @@ class Ideogram(PathPatch):
 
         Returns
         -------
-        matplotlib.collections.PolyCollection
+        karyogram_plot.spans.Spans
             The fills, widest first.
 
         Raises
@@ -220,7 +225,14 @@ class Ideogram(PathPatch):
             "gid": f"{self.chromosome.name}-paint",
             **kwargs,
         }
-        fills = _Fills(self, starts[order], ends[order], **kwargs)
+        fills = Spans(
+            self.offset + starts[order],
+            self.offset + ends[order],
+            self._overshoot(),
+            orientation=self.orientation,
+            min_points=MIN_PAINT_POINTS,
+            **kwargs,
+        )
         self.axes.add_collection(fills, autolim=False)
         fills.set_clip_path(self)
         fills.set_clip_box(None)
@@ -302,6 +314,10 @@ class Ideogram(PathPatch):
         cap = half_pixels / pixels_per_bp if pixels_per_bp > 0 and half_pixels > 0 else None
         return cap or 0.02 * self.chromosome.length
 
+    def _overshoot(self) -> tuple[float, float]:
+        """Return the across edges of fills that overshoot the body, for clipping."""
+        return self.center - OVERSHOOT * self.half, self.center + OVERSHOOT * self.half
+
     def _scale(self) -> tuple[float, float]:
         """Return pixels per bp along the body and the body half-width in pixels."""
         length = self.chromosome.length
@@ -328,24 +344,6 @@ class _LocusBox(PathPatch):
         return _span(self.ideogram, *self.extent(), BOX)
 
 
-class _Fills(PolyCollection):
-    """Painted spans, widened at draw time to at least `MIN_PAINT_POINTS`."""
-
-    def __init__(self, ideogram: Ideogram, starts: np.ndarray, ends: np.ndarray, **kwargs):
-        super().__init__(_quads(ideogram, starts, ends), **kwargs)
-        self.ideogram = ideogram
-        self.starts = starts
-        self.ends = ends
-
-    def draw(self, renderer) -> None:
-        pixels_per_bp, _ = self.ideogram._scale()
-        min_bp = renderer.points_to_pixels(MIN_PAINT_POINTS) / pixels_per_bp
-        mid = (self.starts + self.ends) / 2
-        half = np.maximum((self.ends - self.starts) / 2, min_bp / 2)
-        self.set_verts(_quads(self.ideogram, mid - half, mid + half))
-        super().draw(renderer)
-
-
 class _Knob(PathPatch):
     """Centromere fill of a telocentric knob, from position 0 to its waist."""
 
@@ -355,14 +353,6 @@ class _Knob(PathPatch):
 
     def get_path(self) -> Path:
         return _span(self.ideogram, 0, outline.KNOB * self.ideogram._cap(), OVERSHOOT)
-
-
-def _quads(ideogram: Ideogram, starts: np.ndarray, ends: np.ndarray) -> np.ndarray:
-    """Return boxes over chromosome spans that overshoot the body, for clipping."""
-    return ideogram.xy(
-        np.stack([starts, ends, ends, starts], axis=1),
-        [-OVERSHOOT, -OVERSHOOT, OVERSHOOT, OVERSHOOT],
-    )
 
 
 def _span(ideogram: Ideogram, start: float, end: float, half: float) -> Path:

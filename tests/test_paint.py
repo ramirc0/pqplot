@@ -19,7 +19,8 @@ SEGMENTS = {
 def fills(kary, chrom, copy=0):
     """Painted collections on one copy of a chromosome, in paint order."""
     ideo = kary.ideograms(chrom)[copy]
-    return [c for c in ideo.axes.collections if getattr(c, "ideogram", None) is ideo]
+    painted = [c for c in ideo.axes.collections if c.get_gid() == f"{ideo.chromosome.name}-paint"]
+    return [c for c in painted if np.mean(c.across) == ideo.center]
 
 
 def spans(collection):
