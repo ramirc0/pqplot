@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
+import warnings
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from typing import Literal
@@ -12,7 +13,7 @@ import numpy as np
 from matplotlib.artist import Artist
 from matplotlib.axes import Axes
 from matplotlib.cm import ScalarMappable
-from matplotlib.collections import PathCollection
+from matplotlib.collections import LineCollection, PathCollection
 from matplotlib.colorbar import Colorbar
 from matplotlib.colors import Colormap, Normalize, to_rgba_array
 from matplotlib.figure import Figure
@@ -20,13 +21,14 @@ from matplotlib.legend import Legend
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, StepPatch
 from matplotlib.ticker import MaxNLocator
-from matplotlib.transforms import Bbox
+from matplotlib.transforms import Bbox, IdentityTransform, ScaledTranslation, Transform
 from matplotlib.typing import ColorType
 
 from pqplot import layout
 from pqplot.columns import column, rows_by_chrom
 from pqplot.genome import Chromosome, Genome, chrom_key
 from pqplot.ideograms import MIN_PAINT_POINTS, Ideogram
+from pqplot.labels import capacity, spread
 from pqplot.panels import Orientation, add_panel
 from pqplot.spans import Spans
 
@@ -42,6 +44,8 @@ COLORBAR_POINTS = (7.0, 144.0)
 """Width and longest length of a colorbar, in points."""
 COLORBAR_GAP = 8.0
 """Space between the karyogram and its colorbar, in points."""
+LEADER_POINTS = (5.0, 7.0, 10.0)
+"""Start, elbow and end of a label leader, in points from the track edge."""
 
 
 @dataclass(frozen=True)
@@ -175,6 +179,7 @@ class Karyogram:
         self._ideograms: dict[str, list[Ideogram]] = {}
         self._legend: dict[str, Artist] = {}
         self._orientation = orientation
+        self._tracks = {t.name: t for t in tracks}
         body = next(s for s in grid.slots if s.track is None)
         tracks_first: dict[str, Axes] = {}
         along, value = ("sharey", "sharex") if orientation == "vertical" else ("sharex", "sharey")
@@ -297,10 +302,10 @@ class Karyogram:
         >>> list(points)
         ['chr1']
         """
-        panels = self.panels(name)
-        if not panels:
+        if name not in self._tracks:
             raise KeyError(f"no track {name!r}")
-        return TrackPanels(panels, self._orientation, self._legend)
+        side = self._tracks[name].side
+        return TrackPanels(self.panels(name), self._orientation, side, self._legend)
 
     def ideograms(self, chrom: str) -> list[Ideogram]:
         """Return the drawn copies of one chromosome.
@@ -546,8 +551,12 @@ class TrackPanels:
         Track panels keyed by chromosome name, in drawing order.
     orientation : {"horizontal", "vertical"}
         Direction of the chromosomes.
+    side : {"before", "after"}
+        Side of the body the track sits on. Marks and labels start from
+        the edge that faces the body.
     legend : dict of str to matplotlib.artist.Artist
-        Legend entries of the karyogram, which `intervals` adds to.
+        Legend entries of the karyogram, which `intervals` and `mark` add
+        to.
 
     Examples
     --------
@@ -558,11 +567,167 @@ class TrackPanels:
     """
 
     def __init__(
-        self, panels: dict[str, Axes], orientation: Orientation, legend: dict[str, Artist]
+        self,
+        panels: dict[str, Axes],
+        orientation: Orientation,
+        side: Literal["before", "after"],
+        legend: dict[str, Artist],
     ):
         self._panels = {chrom_key(name): (name, panel) for name, panel in panels.items()}
         self._orientation = orientation
+        self._side = side
         self._legend = legend
+
+    def mark(
+        self,
+        data: object = None,
+        *,
+        chrom: object = "chrom",
+        pos: object = "pos",
+        color: object = None,
+        palette: Mapping[object, ColorType] | None = None,
+        size: float = 16.0,
+        **kwargs,
+    ) -> dict[str, PathCollection]:
+        """Draw a triangle at each position, on the track edge that faces the body.
+
+        Each triangle points at the body. The track's value axis is hidden.
+
+        Parameters
+        ----------
+        data : DataFrame or dict, optional
+            Table with one row per mark.
+        chrom : str or array-like, default "chrom"
+            Chromosome of each mark.
+        pos : str or array-like, default "pos"
+            Position in bp.
+        color : str or array-like, optional
+            Category of each mark. Categories get colors from `palette` and
+            appear in `Karyogram.legend`. By default, every mark gets the
+            first color of the theme's cycle.
+        palette : mapping, optional
+            Color of each category, in legend order. By default, the
+            theme's color cycle in order of first appearance.
+        size : float, default 16
+            Marker area in points squared, as in `matplotlib.axes.Axes.scatter`.
+        **kwargs
+            Passed to `matplotlib.axes.Axes.scatter`.
+
+        Returns
+        -------
+        dict of str to matplotlib.collections.PathCollection
+            Marks keyed by chromosome name.
+
+        Raises
+        ------
+        KeyError
+            If `palette` lacks a category.
+
+        Examples
+        --------
+        >>> from pqplot import Genome
+        >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("hits", "after", 5)])
+        >>> gwas = {"chrom": ["1", "2"], "pos": [55e6, 21e6], "trait": ["LDL", "LDL"]}
+        >>> list(kary.track("hits").mark(gwas, color="trait"))
+        ['chr1', 'chr2']
+        """
+        along = column(data, pos).astype(float)
+        categories = None if color is None else column(data, color)
+        marker = {(1, 0): "<", (-1, 0): ">", (0, -1): "^", (0, 1): "v"}[self._away()]
+
+        def handle(swatch: np.ndarray) -> Artist:
+            return Line2D(
+                [],
+                [],
+                marker=marker,
+                markersize=np.sqrt(size),
+                linestyle="none",
+                color=swatch,
+                markeredgewidth=0,
+            )
+
+        codes, swatches = _category_colors(categories, len(along), palette, self._legend, handle)
+        inset = np.array(self._away()) * np.sqrt(size) / 2 / 72
+        kwargs = {"linewidths": 0, "clip_on": False, "zorder": 3, **kwargs}
+        self._hide_values()
+        marks = {}
+        for name, panel, rows in self._groups(data, chrom):
+            transform = self._across_axes(panel) + ScaledTranslation(
+                *inset, panel.figure.dpi_scale_trans
+            )
+            marks[name] = panel.scatter(
+                *self._xy(along[rows], np.full(len(rows), self._inner())),
+                s=size,
+                marker=marker,
+                c=swatches[codes[rows]],
+                transform=transform,
+                **kwargs,
+            )
+        return marks
+
+    def label(
+        self,
+        data: object = None,
+        *,
+        chrom: object = "chrom",
+        pos: object = "pos",
+        text: object = "text",
+        fontsize: float | str = "x-small",
+        **kwargs,
+    ) -> dict[str, LabelLane]:
+        """Write a label for each position, joined to it by a leader line.
+
+        Labels start from the track edge that faces the body. Crowded
+        labels spread apart at draw time and keep their order. Labels that
+        still do not fit are hidden from the last row up, with a warning,
+        so put the important rows first. Labels do not count in the
+        layout, so size the track to fit the longest one. The track's value
+        axis is hidden.
+
+        Parameters
+        ----------
+        data : DataFrame or dict, optional
+            Table with one row per label.
+        chrom : str or array-like, default "chrom"
+            Chromosome of each label.
+        pos : str or array-like, default "pos"
+            Position in bp the label points at.
+        text : str or array-like, default "text"
+            Label text.
+        fontsize : float or str, default "x-small"
+            Font size of the labels.
+        **kwargs
+            Passed to `matplotlib.text.Text`.
+
+        Returns
+        -------
+        dict of str to LabelLane
+            Labels keyed by chromosome name.
+
+        Examples
+        --------
+        >>> from pqplot import Genome
+        >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("genes", "after", 5)])
+        >>> genes = {"chrom": ["1", "2"], "start": [55e6, 21e6], "symbol": ["PCSK9", "APOB"]}
+        >>> lanes = kary.track("genes").label(genes, pos="start", text="symbol")
+        >>> [t.get_text() for t in lanes["chr1"].texts]
+        ['PCSK9']
+        """
+        along = column(data, pos).astype(float)
+        texts = column(data, text).astype(str)
+        self._hide_values()
+        return {
+            name: LabelLane(
+                panel,
+                along[rows],
+                texts[rows],
+                orientation=self._orientation,
+                away=self._away(),
+                fontsize=fontsize,
+                **kwargs,
+            )
+            for name, panel, rows in self._groups(data, chrom)
+        }
 
     def scatter(
         self,
@@ -848,6 +1013,28 @@ class TrackPanels:
     def _xy(self, along: np.ndarray, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         return (values, along) if self._orientation == "vertical" else (along, values)
 
+    def _hide_values(self) -> None:
+        """Hide the value axis, which means nothing for marks and labels."""
+        for _, panel in self._panels.values():
+            (panel.xaxis if self._orientation == "vertical" else panel.yaxis).set_visible(False)
+
+    def _away(self) -> tuple[int, int]:
+        """Return the display direction that points away from the body."""
+        sign = 1 if self._side == "after" else -1
+        return (sign, 0) if self._orientation == "vertical" else (0, -sign)
+
+    def _inner(self) -> float:
+        """Return the across position of the edge facing the body, as an axes fraction."""
+        return 0.0 if sum(self._away()) > 0 else 1.0
+
+    def _across_axes(self, panel: Axes) -> Transform:
+        """Return the transform with along in data and across in axes fractions."""
+        return (
+            panel.get_yaxis_transform()
+            if self._orientation == "vertical"
+            else panel.get_xaxis_transform()
+        )
+
     def _add_spans(
         self,
         panel: Axes,
@@ -858,11 +1045,7 @@ class TrackPanels:
         **kwargs,
     ) -> Spans:
         """Add spans that fill the track width, with a thin edge to hide seams."""
-        transform = (
-            panel.get_yaxis_transform()
-            if self._orientation == "vertical"
-            else panel.get_xaxis_transform()
-        )
+        transform = self._across_axes(panel)
         kwargs = {"facecolors": colors, "edgecolors": colors, "linewidths": 0.25, **kwargs}
         spans = Spans(
             starts,
@@ -910,13 +1093,23 @@ def _value_scale(values: np.ndarray, cmap: object, norm: Normalize | None) -> Sc
     return scale
 
 
+def _swatch(color: np.ndarray) -> Artist:
+    """Return a legend handle for a filled category."""
+    return Patch(facecolor=color, edgecolor="none")
+
+
 def _category_colors(
-    values: np.ndarray | None, rows: int, palette: Mapping | None, legend: dict[str, Artist]
+    values: np.ndarray | None,
+    rows: int,
+    palette: Mapping | None,
+    legend: dict[str, Artist],
+    handle: Callable[[np.ndarray], Artist] = _swatch,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return each row's category index and the category colors.
 
-    Categories join `legend`. Without categories, every row gets the first
-    color of the theme's cycle and the legend stays as it is.
+    Categories join `legend` with handles made by `handle`. Without
+    categories, every row gets the first color of the theme's cycle and the
+    legend stays as it is.
     """
     if values is None:
         return np.zeros(rows, dtype=int), to_rgba_array(["C0"])
@@ -928,7 +1121,7 @@ def _category_colors(
         else [palette[x] for x in labels.tolist()]
     )
     for label, swatch in zip(labels, swatches, strict=True):
-        legend[str(label)] = Patch(facecolor=swatch, edgecolor="none")
+        legend[str(label)] = handle(swatch)
     return codes, swatches
 
 
@@ -1017,6 +1210,155 @@ def _own_axes(grid: layout.Grid, orientation: Orientation) -> Axes:
     size = ((width + PAD_POINTS) / 72, (height + PAD_POINTS) / 72)
     _, ax = plt.subplots(figsize=size, layout="constrained")
     return ax
+
+
+class LabelLane(Artist):
+    """Labels in a track panel, spread along the chromosome at each draw.
+
+    Each label sits beyond the panel edge that faces the body, joined to
+    its position by a leader line. At draw time, labels closer than one
+    line of text spread apart with `pqplot.labels.spread`, keeping their
+    order. Labels that do not fit are hidden from the last one up, with a
+    warning.
+
+    Parameters
+    ----------
+    panel : matplotlib.axes.Axes
+        Track panel to draw in.
+    positions : numpy.ndarray
+        Positions in bp the labels point at.
+    texts : numpy.ndarray of str
+        Label texts, most important first.
+    orientation : {"horizontal", "vertical"}
+        Direction of the chromosome.
+    away : tuple of int
+        Display direction that points away from the body.
+    fontsize : float or str
+        Font size of the labels.
+    **kwargs
+        Passed to `matplotlib.text.Text`.
+
+    Attributes
+    ----------
+    texts : list of matplotlib.text.Text
+        Labels, in the order given.
+    leaders : matplotlib.collections.LineCollection
+        Leader lines, one per label.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from pqplot import Genome
+    >>> kary = Karyogram(Genome.bundled("hg38"), chroms=["1"], tracks=[Track("genes", "after", 5)])
+    >>> panel = kary.panel("1", "genes")
+    >>> lane = LabelLane(panel, np.array([5e7]), np.array(["TP73"]),
+    ...                  orientation="vertical", away=(1, 0), fontsize="x-small")
+    >>> lane.texts[0].get_text()
+    'TP73'
+    """
+
+    def __init__(
+        self,
+        panel: Axes,
+        positions: np.ndarray,
+        texts: np.ndarray,
+        *,
+        orientation: Orientation,
+        away: tuple[int, int],
+        fontsize: float | str,
+        **kwargs,
+    ):
+        super().__init__()
+        self.positions = positions
+        self.orientation = orientation
+        self.away = np.array(away)
+        rotation = 0 if orientation == "vertical" else 90
+        # Align the end of each label nearest the body to its anchor.
+        ha = "left" if away[0] > 0 or away[1] > 0 else "right"
+        self.texts = [
+            panel.text(
+                0,
+                0,
+                text,
+                transform=IdentityTransform(),
+                fontsize=fontsize,
+                rotation=rotation,
+                rotation_mode="anchor",
+                ha=ha,
+                va="center",
+                clip_on=False,
+                in_layout=False,
+                zorder=3,
+                **kwargs,
+            )
+            for text in texts
+        ]
+        self.leaders = LineCollection(
+            [],
+            colors=plt.rcParams["axes.edgecolor"],
+            linewidths=0.4,
+            transform=IdentityTransform(),
+            clip_on=False,
+            zorder=2.95,
+        )
+        self.leaders.set_in_layout(False)
+        panel.add_collection(self.leaders, autolim=False)
+        self.set_zorder(2.9)
+        self.set_in_layout(False)
+        panel.add_artist(self)
+
+    def draw(self, renderer) -> None:
+        """Place the labels and leaders for the current panel size.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from pqplot import Genome
+        >>> kary = Karyogram(Genome.bundled("hg38"), chroms=["1"], tracks=[Track("g", "after", 5)])
+        >>> lane = LabelLane(kary.panel("1", "g"), np.array([5e7]), np.array(["TP73"]),
+        ...                  orientation="vertical", away=(1, 0), fontsize="x-small")
+        >>> kary.figure.draw_without_rendering()
+        >>> lane.texts[0].get_position() != (0, 0)
+        True
+        """
+        if not self.texts:
+            return
+        along = 1 if self.orientation == "vertical" else 0
+        box = self.axes.bbox
+        points = renderer.points_to_pixels
+        line = points(self.texts[0].get_fontsize()) * 1.2
+        low, high = sorted((box.p0[along], box.p1[along]))
+        low, high = low + line / 2, high - line / 2
+        fits = min(len(self.texts), capacity(line, low, high))
+        if fits < len(self.texts):
+            warnings.warn(
+                f"{len(self.texts) - fits} labels do not fit; hiding the last ones. "
+                "Use a smaller font or fewer labels.",
+                stacklevel=2,
+            )
+        xy = np.zeros((len(self.positions), 2))
+        xy[:, along] = self.positions
+        targets = self.axes.transData.transform(xy)[:, along]
+        shown = np.arange(fits)
+        order = shown[np.argsort(targets[shown], kind="stable")]
+        placed = np.empty(fits)
+        placed[np.argsort(order)] = spread(targets[order], line, low, high)
+        inner = box.p0 if self.away.sum() > 0 else box.p1
+        edge = inner[1 - along]
+        start, elbow, end = (edge + self.away[1 - along] * points(d) for d in LEADER_POINTS)
+        segments = []
+        for i, text in enumerate(self.texts):
+            text.set_visible(i < fits)
+            if i >= fits:
+                continue
+            path = np.empty((3, 2))
+            path[:, along] = [targets[i], targets[i], placed[i]]
+            path[:, 1 - along] = [start, elbow, end]
+            segments.append(path)
+            anchor = path[-1].copy()
+            anchor[1 - along] += self.away[1 - along] * points(1)
+            text.set_position(anchor)
+        self.leaders.set_segments(segments)
 
 
 class _OuterTicks(MaxNLocator):
