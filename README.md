@@ -51,7 +51,9 @@ kary.legend(title="Trait")
 kary.figure.savefig("karyotype.svg")
 ```
 
-![Karyotype with marks and labels](https://raw.githubusercontent.com/ramirc0/pqplot/main/tests/baseline/test_gallery_karyotype.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ramirc0/pqplot/main/tests/baseline/test_gallery_karyotype.png" alt="Karyotype with marks and labels" width="927">
+</p>
 
 An ideogram over your own locus plot, with x in bp:
 
@@ -66,7 +68,9 @@ body.set_xlim(locus.start, locus.end)
 ideo.zoom(locus, into=body)
 ```
 
-![Locus with an ideogram header](https://raw.githubusercontent.com/ramirc0/pqplot/main/tests/baseline/test_gallery_locus.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ramirc0/pqplot/main/tests/baseline/test_gallery_locus.png" alt="Locus with an ideogram header" width="650">
+</p>
 
 Painting chromosome bodies by category or by value:
 
@@ -85,8 +89,10 @@ heat = kary.paint(bins, start="start", end="end", value="per_mb", cmap="magma")
 kary.colorbar(heat, label="cCREs per Mb")
 ```
 
-![Painted copy number](https://raw.githubusercontent.com/ramirc0/pqplot/main/tests/baseline/test_gallery_paint_categories.png)
-![Painted density](https://raw.githubusercontent.com/ramirc0/pqplot/main/tests/baseline/test_gallery_paint_values.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ramirc0/pqplot/main/tests/baseline/test_gallery_paint_categories.png" alt="Painted copy number" width="347">
+  <img src="https://raw.githubusercontent.com/ramirc0/pqplot/main/tests/baseline/test_gallery_paint_values.png" alt="Painted density" width="536">
+</p>
 
 The [`gallery/`](https://github.com/ramirc0/pqplot/tree/main/gallery) scripts
 hold the full code for these figures and for data tracks, homolog pairs,
