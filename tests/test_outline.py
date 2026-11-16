@@ -61,12 +61,12 @@ def test_unknown_centromere_draws_no_waist():
     np.testing.assert_allclose(np.abs(t), 1)
 
 
-def test_telocentric_knob_sits_before_position_zero():
+def test_telocentric_knob_sits_inside_the_chromosome():
     along, across = outline.vertices(Chromosome("1", 1000, centromere=(0, 0)), CAP)
-    assert along.min() == pytest.approx(-outline.KNOB * CAP)
+    assert along.min() == pytest.approx(0)
     assert along.max() == pytest.approx(1000)
     s, t = upper_edge(along, across)
-    assert np.interp(0, s, t) == pytest.approx(outline.PINCH)
+    assert np.interp(outline.KNOB * CAP, s, t) == pytest.approx(outline.PINCH)
 
 
 def stalked():

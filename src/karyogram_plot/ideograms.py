@@ -127,6 +127,19 @@ class Ideogram(PathPatch):
         ax.add_collection(self.bands, autolim=False)
         self.bands.set_clip_path(self)
         self.bands.set_clip_box(None)
+        if chromosome.telocentric:
+            acen = STAIN_COLORS["acen"]
+            knob = _Knob(
+                self,
+                facecolor=acen,
+                edgecolor=acen,
+                linewidth=0.25,
+                zorder=self.get_zorder() - 0.05,
+                gid=f"{chromosome.name}-knob",
+            )
+            ax.add_artist(knob)
+            knob.set_clip_path(self)
+            knob.set_clip_box(None)
 
     def xy(self, along: object, across: object) -> np.ndarray:
         """Map chromosome coordinates to data coordinates.
@@ -170,10 +183,7 @@ class Ideogram(PathPatch):
         >>> Ideogram(Chromosome("chr1", 100), ax).get_path().vertices.shape[1]
         2
         """
-        pixels_per_bp, half_pixels = self._scale()
-        cap = half_pixels / pixels_per_bp if pixels_per_bp > 0 and half_pixels > 0 else None
-        cap = cap or 0.02 * self.chromosome.length
-        along, across = outline.vertices(self.chromosome, cap, stalks=self._stalks)
+        along, across = outline.vertices(self.chromosome, self._cap(), stalks=self._stalks)
         xy = self.xy(along, across)
         return Path(np.vstack([xy, xy[:1]]), closed=True)
 
@@ -232,6 +242,12 @@ class Ideogram(PathPatch):
         self.figure.add_artist(lines)
         return box, lines
 
+    def _cap(self) -> float:
+        """Return the cap radius in bp at the current Axes scale."""
+        pixels_per_bp, half_pixels = self._scale()
+        cap = half_pixels / pixels_per_bp if pixels_per_bp > 0 and half_pixels > 0 else None
+        return cap or 0.02 * self.chromosome.length
+
     def _scale(self) -> tuple[float, float]:
         """Return pixels per bp along the body and the body half-width in pixels."""
         length = self.chromosome.length
@@ -255,10 +271,26 @@ class _LocusBox(PathPatch):
         return mid - half, mid + half
 
     def get_path(self) -> Path:
-        s0, s1 = self.extent()
-        return Path(
-            self.ideogram.xy([s0, s1, s1, s0, s0], [-BOX, -BOX, BOX, BOX, -BOX]), closed=True
-        )
+        return _span(self.ideogram, *self.extent(), BOX)
+
+
+class _Knob(PathPatch):
+    """Centromere fill of a telocentric knob, from position 0 to its waist."""
+
+    def __init__(self, ideogram: Ideogram, **kwargs):
+        super().__init__(Path(np.zeros((1, 2))), **kwargs)
+        self.ideogram = ideogram
+
+    def get_path(self) -> Path:
+        return _span(self.ideogram, 0, outline.KNOB * self.ideogram._cap(), OVERSHOOT)
+
+
+def _span(ideogram: Ideogram, start: float, end: float, half: float) -> Path:
+    """Return a closed box over a chromosome span, `half` body half-widths tall."""
+    return Path(
+        ideogram.xy([start, end, end, start, start], [-half, -half, half, half, -half]),
+        closed=True,
+    )
 
 
 class _ZoomLines(PathPatch):
@@ -532,7 +564,5 @@ def _spans(chromosome: Chromosome, bands: bool) -> tuple[np.ndarray, np.ndarray,
         spans = [(b.start, b.end, _stain_color(b.stain)) for b in chromosome.bands]
     else:
         spans = [(0, chromosome.length, _blend(BODY))]
-    if chromosome.telocentric:
-        spans.insert(0, (-chromosome.length, 0, STAIN_COLORS["acen"]))
     starts, ends, colors = zip(*spans, strict=True)
     return np.array(starts, dtype=float), np.array(ends, dtype=float), list(colors)

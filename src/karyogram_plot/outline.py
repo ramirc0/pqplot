@@ -15,7 +15,7 @@ PINCH = 0.42
 STALK = 0.55
 """Half-width along a stalk."""
 KNOB = 1.6
-"""Length of a telocentric knob before position 0, in caps."""
+"""Length of a telocentric knob from position 0 to its waist, in caps."""
 WAIST = 0.9
 """Shortest half-length of the centromere waist, in caps."""
 ARC = 25
@@ -27,8 +27,8 @@ def vertices(
     """Return the closed outline of a chromosome body.
 
     The outline has round telomere caps, a waist at the centromere and
-    narrow stalks. A telocentric chromosome gets a round knob before
-    position 0. An unknown centromere gets no waist.
+    narrow stalks. A telocentric chromosome gets a round knob at position
+    0, with its waist `KNOB` caps in. An unknown centromere gets no waist.
 
     Parameters
     ----------
@@ -60,16 +60,15 @@ def vertices(
     """
     if cap <= 0:
         raise ValueError(f"cap must be positive, got {cap}")
-    start, mid, waist = 0.0, None, WAIST * cap
+    cap = min(cap, chromosome.length / 2)
+    lo, hi = cap, chromosome.length - cap
+    mid, waist = None, WAIST * cap
     if chromosome.telocentric:
-        start, mid = -KNOB * cap, 0.0
+        mid = KNOB * cap
+        waist = mid - lo
     elif chromosome.centromere is not None:
         mid = sum(chromosome.centromere) / 2
         waist = max(waist, np.ptp(chromosome.centromere) / 2)
-    cap = min(cap, (chromosome.length - start) / 2)
-    lo, hi = start + cap, chromosome.length - cap
-    if chromosome.telocentric:
-        waist = mid - lo
     spans = [(b.start, b.end) for b in chromosome.bands if stalks and b.stain.name == "stalk"]
 
     def width(s: float, right: bool) -> float:

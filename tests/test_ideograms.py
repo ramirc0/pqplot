@@ -5,7 +5,7 @@ import pytest
 from matplotlib.colors import to_rgba
 
 import karyogram_plot as kp
-from karyogram_plot import ideograms
+from karyogram_plot import ideograms, outline
 
 HG38 = kp.Genome.bundled("hg38")
 BRCA1 = kp.Region.parse("chr17:43,044,295-43,125,483")
@@ -96,14 +96,35 @@ def test_unbanded_body_is_one_span():
     assert len(ideo.bands.get_paths()) == 1
 
 
-def test_telocentric_knob_is_painted_as_centromere():
-    fig, ax = plt.subplots()
-    chrom = kp.Genome.bundled("mm39")["chr1"]
-    ideo = kp.Ideogram(chrom, ax)
-    first = ideo.bands.get_paths()[0].vertices[:, 0]
-    assert first.max() == 0
-    acen = to_rgba(ideograms.STAIN_COLORS["acen"])
-    np.testing.assert_allclose(ideo.bands.get_facecolors()[0], acen)
+def knob(ideo):
+    return next(p for p in ideo.axes.patches if p.get_gid() == f"{ideo.chromosome.name}-knob")
+
+
+def test_telocentric_knob_is_painted_as_centromere_up_to_the_pinch():
+    ideo = kp.ideogram(kp.Genome.bundled("mm39")["chr1"])
+    ideo.figure.draw_without_rendering()
+    pixels_per_bp, half_pixels = ideo._scale()
+    x = knob(ideo).get_path().vertices[:, 0]
+    assert x.min() == 0
+    assert x.max() == pytest.approx(outline.KNOB * half_pixels / pixels_per_bp)
+    np.testing.assert_allclose(
+        to_rgba(knob(ideo).get_facecolor()), to_rgba(ideograms.STAIN_COLORS["acen"])
+    )
+    assert knob(ideo).get_clip_path() is not None
+
+
+def test_metacentric_chromosome_has_no_knob():
+    ideo = kp.ideogram(HG38["chr1"])
+    assert not any(p.get_gid() == "chr1-knob" for p in ideo.axes.patches)
+
+
+def test_genome_strip_knobs_stay_inside_their_chromosomes():
+    strip = kp.genome_strip(kp.Genome.bundled("mm39").concatenated(gap=5_000_000))
+    strip[0].figure.draw_without_rendering()
+    for ideo in strip:
+        x = ideo.get_path().vertices[:, 0]
+        assert x.min() == pytest.approx(ideo.offset)
+        assert x.max() == pytest.approx(ideo.offset + ideo.chromosome.length)
 
 
 def test_name_sits_left_of_a_telocentric_knob():
