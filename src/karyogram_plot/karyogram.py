@@ -2,16 +2,24 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from typing import Literal
 
 import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.artist import Artist
 from matplotlib.axes import Axes
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Colormap, Normalize, to_rgba_array
 from matplotlib.figure import Figure
+from matplotlib.legend import Legend
+from matplotlib.patches import Patch
+from matplotlib.typing import ColorType
 
 from karyogram_plot import layout
+from karyogram_plot.columns import column, rows_by_chrom
 from karyogram_plot.genome import Chromosome, Genome, chrom_key
 from karyogram_plot.ideograms import Ideogram
 from karyogram_plot.panels import Orientation, add_panel
@@ -147,12 +155,14 @@ class Karyogram:
                 [(t.name, t.size) for t in tracks if t.side == "below"],
             ),
         )
+        self._sized_to_content = ax is None
         if ax is None:
             ax = _own_axes(grid, orientation)
         ax.set_axis_off()
         self.ax = ax
         self._panels: dict[tuple[str, str | None], Axes] = {}
         self._ideograms: dict[str, list[Ideogram]] = {}
+        self._legend: dict[str, Artist] = {}
         body = next(s for s in grid.slots if s.track is None)
         tracks_first: dict[str, Axes] = {}
         along, value = ("sharey", "sharex") if orientation == "vertical" else ("sharex", "sharey")
@@ -269,6 +279,196 @@ class Karyogram:
         2
         """
         return self._ideograms[chrom_key(chrom)]
+
+    def paint(
+        self,
+        data: object = None,
+        *,
+        chrom: object = "chrom",
+        start: object = None,
+        end: object = None,
+        color: object = None,
+        value: object = None,
+        palette: Mapping[object, ColorType] | None = None,
+        cmap: str | Colormap | None = None,
+        norm: Normalize | None = None,
+        copy: object = None,
+    ) -> ScalarMappable | None:
+        """Fill chromosome bodies by category or by value.
+
+        Touching spans of one category merge into one. Small spans keep a
+        minimum width in points and draw over larger ones. Rows on
+        chromosomes that are not drawn are skipped.
+
+        Each column argument is a column name in `data` or the values
+        themselves.
+
+        Parameters
+        ----------
+        data : DataFrame or dict, optional
+            Table with one row per span, such as a polars or pandas
+            DataFrame.
+        chrom : str or array-like, default "chrom"
+            Chromosome of each span. Names match across styles.
+        start, end : str or array-like, optional
+            Span in bp. Without them, each row fills its whole chromosome.
+        color : str or array-like, optional
+            Category of each span. Categories get colors from `palette` and
+            appear in `legend`. Without `color` or `value`, every span gets
+            the first color of the theme's cycle.
+        value : str or array-like, optional
+            Number for each span, colored through `cmap` and `norm`.
+        palette : mapping, optional
+            Color of each category, in legend order. By default, the
+            theme's color cycle in order of first appearance.
+        cmap : str or matplotlib.colors.Colormap, optional
+            Colormap for `value`. By default, the theme's.
+        norm : matplotlib.colors.Normalize, optional
+            Scaling of `value`. By default, its minimum to its maximum.
+        copy : str or array-like, optional
+            Copy of each span, such as the haplotype. Sorted levels map to
+            copies left to right. Without it, spans fill every copy.
+
+        Returns
+        -------
+        matplotlib.cm.ScalarMappable or None
+            The mapping for `value`, for a colorbar. None for categories.
+
+        Raises
+        ------
+        ValueError
+            If both `color` and `value` are given, only one of `start` and
+            `end` is given, or `copy` has more levels than drawn copies.
+        KeyError
+            If `palette` lacks a category.
+
+        Examples
+        --------
+        >>> from karyogram_plot import Genome
+        >>> kary = Karyogram(Genome.bundled("hg38"), rows=2)
+        >>> segments = {"chrom": ["chr1", "chr7"], "start": [0, 5e6], "end": [4e7, 9e6],
+        ...             "state": ["gain", "loss"]}
+        >>> kary.paint(segments, start="start", end="end", color="state")
+        >>> bins = {"chrom": ["chr2"] * 2, "start": [0, 1e6], "end": [1e6, 2e6], "n": [3, 9]}
+        >>> heat = kary.paint(bins, start="start", end="end", value="n", cmap="magma")
+        >>> heat.norm.vmax
+        9.0
+        """
+        if color is not None and value is not None:
+            raise ValueError("pass color or value, not both")
+        if (start is None) != (end is None):
+            raise ValueError("pass start and end together, or neither")
+        chroms = column(data, chrom)
+        copy_index = None
+        if copy is not None:
+            levels, copy_index = np.unique(column(data, copy), return_inverse=True)
+            copies = len(next(iter(self._ideograms.values())))
+            if len(levels) > copies:
+                raise ValueError(f"copy has {len(levels)} levels for {copies} copies")
+        mappable = None
+        if value is not None:
+            values = column(data, value).astype(float)
+            mappable = ScalarMappable(norm, cmap)
+            mappable.set_array(values)
+            mappable.autoscale_None()
+            # Each row is its own category, so no spans merge.
+            codes, swatches = np.arange(len(values)), mappable.to_rgba(values)
+        elif color is None:
+            codes, swatches = np.zeros(len(chroms), dtype=int), to_rgba_array(["C0"])
+        else:
+            labels, codes = _categories(column(data, color), palette)
+            cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+            swatches = to_rgba_array(
+                [cycle[i % len(cycle)] for i in range(len(labels))]
+                if palette is None
+                else [palette[x] for x in labels.tolist()]
+            )
+            for label, swatch in zip(labels, swatches, strict=True):
+                self._legend[str(label)] = Patch(facecolor=swatch, edgecolor="none")
+        starts = None if start is None else column(data, start).astype(float)
+        ends = None if end is None else column(data, end).astype(float)
+        for key, rows in rows_by_chrom(chroms).items():
+            for k, ideo in enumerate(self._ideograms.get(key, [])):
+                mine = rows if copy_index is None else rows[copy_index[rows] == k]
+                if len(mine) == 0:
+                    continue
+                if starts is None:
+                    s0, s1 = np.zeros(len(mine)), np.full(len(mine), ideo.chromosome.length)
+                else:
+                    s0, s1 = starts[mine], ends[mine]
+                s0, s1, c = _merge(s0, s1, codes[mine])
+                ideo.paint(s0, s1, swatches[c])
+        return mappable
+
+    def legend(self, title: str | None = None, **kwargs) -> Legend:
+        """Draw a legend of the categories painted or marked so far.
+
+        Parameters
+        ----------
+        title : str, optional
+            Legend title.
+        **kwargs
+            Passed to `matplotlib.axes.Axes.legend`. By default, the
+            legend sits outside the host Axes, at its top right, without a
+            frame.
+
+        When the karyogram made its own figure, the figure widens to hold
+        the legend, so the chromosomes keep their size.
+
+        Returns
+        -------
+        matplotlib.legend.Legend
+
+        Examples
+        --------
+        >>> from karyogram_plot import Genome
+        >>> kary = Karyogram(Genome.bundled("hg38"), chroms=["1"])
+        >>> kary.paint({"chrom": ["1"], "split": ["test"]}, color="split")
+        >>> [t.get_text() for t in kary.legend(title="Split").get_texts()]
+        ['test']
+        """
+        old = self.ax.get_legend()
+        room = _inches(old) if old else -PAD_POINTS / 72
+        options = {"loc": "upper left", "bbox_to_anchor": (1, 1), "frameon": False}
+        legend = self.ax.legend(
+            list(self._legend.values()), list(self._legend), title=title, **options | kwargs
+        )
+        if self._sized_to_content:
+            self.figure.set_figwidth(self.figure.get_figwidth() + _inches(legend) - room)
+        return legend
+
+
+def _inches(artist: Artist) -> float:
+    """Return the width of an artist in inches."""
+    return artist.get_window_extent().width / artist.figure.dpi
+
+
+def _categories(values: np.ndarray, palette: Mapping | None) -> tuple[np.ndarray, np.ndarray]:
+    """Return the categories in legend order and each row's index into them."""
+    uniques, first, codes = np.unique(values, return_index=True, return_inverse=True)
+    if palette is None:
+        order = np.argsort(first)
+    else:
+        missing = [u for u in uniques.tolist() if u not in palette]
+        if missing:
+            raise KeyError(f"palette lacks categories {missing}")
+        keys = list(palette)
+        order = np.argsort([keys.index(u) for u in uniques.tolist()])
+    rank = np.empty_like(order)
+    rank[order] = np.arange(len(order))
+    return uniques[order], rank[codes]
+
+
+def _merge(
+    starts: np.ndarray, ends: np.ndarray, codes: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Merge spans that touch or overlap the previous span of the same code, by start."""
+    order = np.argsort(starts, kind="stable")
+    starts, ends, codes = starts[order], ends[order], codes[order]
+    head = np.ones(len(starts), dtype=bool)
+    head[1:] = (codes[1:] != codes[:-1]) | (starts[1:] > ends[:-1])
+    heads = np.flatnonzero(head)
+    return starts[heads], np.maximum.reduceat(ends, heads), codes[heads]
 
 
 def _draw_body(
