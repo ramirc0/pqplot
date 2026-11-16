@@ -44,8 +44,9 @@ A karyotype with GWAS hits as marks and gene names as labels:
 import pqplot as pqp
 
 hg38 = pqp.Genome.bundled("hg38")
-kary = pqp.Karyogram(hg38, groups=2, align="centromere",
-                     tracks=[pqp.Track("hits", side="after", size=5)])
+kary = pqp.Karyogram(
+    hg38, groups=2, align="centromere", tracks=[pqp.Track("hits", side="after", size=5)]
+)
 kary.track("hits").mark(hits, pos="pos", color="trait")
 kary.track("hits").label(genes, pos="pos", text="gene")
 kary.legend(title="Trait")
@@ -73,8 +74,13 @@ Painting chromosome bodies by category or by value:
 
 ```python
 kary = pqp.Karyogram(hg38, groups=2)
-kary.paint(segments, start="start", end="end", color="state",
-           palette={"gain": "tab:red", "loss": "tab:blue"})
+kary.paint(
+    segments,
+    start="start",
+    end="end",
+    color="state",
+    palette={"gain": "tab:red", "loss": "tab:blue"},
+)
 
 kary = pqp.Karyogram(hg38, bands=False)
 heat = kary.paint(bins, start="start", end="end", value="per_mb", cmap="magma")
