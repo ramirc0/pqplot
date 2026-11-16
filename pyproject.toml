@@ -19,6 +19,7 @@ dev = [
     "poikilos",
     "polars>=2.1.0",
     "pytest",
+    "pytest-mpl>=0.19",
     "ruff",
 ]
 
@@ -37,5 +38,5 @@ select = ["E", "F", "I", "UP", "B", "NPY"]
 
 [tool.pytest.ini_options]
 testpaths = ["src", "tests"]
-addopts = "--doctest-modules"
+addopts = "--doctest-modules --mpl"
 filterwarnings = ["error"]
