@@ -53,7 +53,7 @@ kary.legend(title="Trait")
 kary.figure.savefig("karyotype.svg")
 ```
 
-![Karyotype with marks and labels](tests/baseline/test_gallery_karyotype.png)
+![Karyotype with marks and labels](https://raw.githubusercontent.com/ramirc0/pqplot/main/tests/baseline/test_gallery_karyotype.png)
 
 An ideogram over your own locus plot, with x in bp:
 
@@ -68,7 +68,7 @@ body.set_xlim(locus.start, locus.end)
 ideo.zoom(locus, into=body)
 ```
 
-![Locus with an ideogram header](tests/baseline/test_gallery_locus.png)
+![Locus with an ideogram header](https://raw.githubusercontent.com/ramirc0/pqplot/main/tests/baseline/test_gallery_locus.png)
 
 Painting chromosome bodies by category or by value:
 
@@ -87,13 +87,13 @@ heat = kary.paint(bins, start="start", end="end", value="per_mb", cmap="magma")
 kary.colorbar(heat, label="cCREs per Mb")
 ```
 
-![Painted copy number](tests/baseline/test_gallery_paint_categories.png)
-![Painted density](tests/baseline/test_gallery_paint_values.png)
+![Painted copy number](https://raw.githubusercontent.com/ramirc0/pqplot/main/tests/baseline/test_gallery_paint_categories.png)
+![Painted density](https://raw.githubusercontent.com/ramirc0/pqplot/main/tests/baseline/test_gallery_paint_values.png)
 
-The [`gallery/`](gallery) scripts hold the full code for these figures and for
-data tracks, homolog pairs, genome-wide plots and unbanded assemblies. Each
-script ends with a figure named `fig`. The tests render them against the images
-in `tests/baseline/`.
+The [`gallery/`](https://github.com/ramirc0/pqplot/tree/main/gallery) scripts
+hold the full code for these figures and for data tracks, homolog pairs,
+genome-wide plots and unbanded assemblies. Each script ends with a figure named
+`fig`. The tests render them against the images in `tests/baseline/`.
 
 ## Help
 
@@ -116,8 +116,9 @@ Christian Ramirez (christian.ramirez1@umassmed.edu)
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file
-for details.
+This project is licensed under the MIT License. See the
+[LICENSE](https://github.com/ramirc0/pqplot/blob/main/LICENSE) file for
+details.
 
 ## Acknowledgments
 

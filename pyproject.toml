@@ -2,11 +2,29 @@
 name = "pqplot"
 version = "0.0.0"
 description = "Chromosome ideograms and karyograms for matplotlib."
+readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Christian Ramirez", email = "christian.ramirez1@umassmed.edu" }]
 requires-python = ">=3.12"
 dependencies = ["matplotlib>=3.10", "numpy>=2.2"]
+keywords = ["ideogram", "karyogram", "karyotype", "chromosome", "genomics", "matplotlib"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Matplotlib",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+
+[project.urls]
+Repository = "https://github.com/ramirc0/pqplot"
+Issues = "https://github.com/ramirc0/pqplot/issues"
+Changelog = "https://github.com/ramirc0/pqplot/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["uv_build>=0.13,<0.14"]
