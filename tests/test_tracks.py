@@ -112,3 +112,23 @@ def test_scatter_markers_have_no_halo_unless_asked():
     assert plain["chr1"].get_linewidths().tolist() == [0]
     haloed = kary.track("cnv").scatter(POINTS, pos="pos", value="log2", linewidths=1)
     assert haloed["chr1"].get_linewidths().tolist() == [1]
+
+
+@pytest.mark.parametrize("orientation", ["vertical", "horizontal"])
+def test_value_axis_labels_clear_the_chromosome_names(orientation):
+    kary = kp.Karyogram(HG38, orientation=orientation, rows=2, tracks=TRACKS)
+    kary.track("cnv").scatter(POINTS, pos="pos", value="log2")
+    kary.figure.draw_without_rendering()
+    renderer = kary.figure.canvas.get_renderer()
+    names = [t.get_window_extent(renderer) for p in kary.panels().values() for t in p.texts]
+    ticks = [
+        label.get_window_extent(renderer)
+        for track in ("genes", "cnv")
+        for panel in kary.panels(track).values()
+        for axis in (panel.xaxis, panel.yaxis)
+        if axis.get_visible()
+        for label in axis.get_ticklabels(which="both")
+        if label.get_visible() and label.get_text()
+    ]
+    assert ticks
+    assert not [(t, n) for t in ticks for n in names if t.overlaps(n)]

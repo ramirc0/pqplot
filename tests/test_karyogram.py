@@ -196,8 +196,15 @@ def test_track_rejects_an_unknown_side():
         kp.Track("a", side="left")
 
 
-def test_track_value_axis_shows_only_on_the_first_chromosome_of_each_group():
-    kary = kp.Karyogram(HG38, orientation="horizontal", rows=2, tracks=TRACKS)
-    shown = [name for name, p in kary.panels("cnv").items() if p.yaxis.get_visible()]
-    assert shown == ["chr1", "chr13"]
-    assert not any(p.xaxis.get_visible() for p in kary.panels("cnv").values())
+@pytest.mark.parametrize(
+    ("orientation", "labeled"), [("vertical", "chr1"), ("horizontal", "chr13")]
+)
+def test_track_value_axis_shows_once_on_the_edge_away_from_the_names(orientation, labeled):
+    kary = kp.Karyogram(HG38, orientation=orientation, rows=2, tracks=TRACKS)
+    panels = kary.panels("cnv")
+    value = "xaxis" if orientation == "vertical" else "yaxis"
+    along = "yaxis" if orientation == "vertical" else "xaxis"
+    assert [name for name, p in panels.items() if getattr(p, value).get_visible()] == [labeled]
+    assert not any(getattr(p, along).get_visible() for p in panels.values())
+    side = getattr(panels[labeled], value).get_ticks_position()
+    assert side == ("top" if orientation == "vertical" else "right")

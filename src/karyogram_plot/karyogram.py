@@ -188,7 +188,8 @@ class Karyogram:
                         orientation,
                         **{along: panel, value: first},
                     )
-                    _style_track(track, orientation, labels=j == 0)
+                    edge = 0 if orientation == "vertical" else len(groups) - 1
+                    _style_track(track, orientation, labels=(g, j) == (edge, 0))
                     tracks_first.setdefault(slot.track, track)
                     self._panels[key, slot.track] = track
 
@@ -960,10 +961,17 @@ def _own_axes(grid: layout.Grid, orientation: Orientation) -> Axes:
 
 
 def _style_track(panel: Axes, orientation: Orientation, labels: bool) -> None:
-    """Show only the value axis of a track panel, and only when `labels` is set."""
-    along, value = (
-        (panel.yaxis, panel.xaxis) if orientation == "vertical" else (panel.xaxis, panel.yaxis)
-    )
+    """Show only the value axis of a track panel, and only when `labels` is set.
+
+    The value axis goes on the side away from the chromosome names: the top
+    in a vertical karyogram and the right in a horizontal one.
+    """
+    if orientation == "vertical":
+        along, value = panel.yaxis, panel.xaxis
+        value.tick_top()
+    else:
+        along, value = panel.xaxis, panel.yaxis
+        value.tick_right()
     along.set_visible(False)
     value.set_visible(labels)
     value.set_tick_params(labelsize="x-small", length=2)
