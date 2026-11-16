@@ -47,32 +47,32 @@ def test_own_figure_uses_constrained_layout():
     drawn(kary)
 
 
-def test_vertical_columns_run_left_to_right_and_rows_top_to_bottom():
-    kary = drawn(pqp.Karyogram(HG38, rows=2))
+def test_vertical_columns_run_left_to_right_and_groups_top_to_bottom():
+    kary = drawn(pqp.Karyogram(HG38, groups=2))
     boxes = {name: p.get_window_extent() for name, p in kary.panels().items()}
     assert boxes["chr1"].x0 < boxes["chr2"].x0
     assert boxes["chr13"].x0 == pytest.approx(boxes["chr1"].x0)
     assert boxes["chr13"].y1 < boxes["chr1"].y0
 
 
-def test_rows_take_explicit_groups():
-    rows = [["1", "2", "3"], ["X", "Y"]]
-    kary = pqp.Karyogram(HG38, rows=rows)
+def test_groups_take_explicit_chromosome_names():
+    groups = [["1", "2", "3"], ["X", "Y"]]
+    kary = pqp.Karyogram(HG38, groups=groups)
     assert list(kary.panels()) == ["chr1", "chr2", "chr3", "chrX", "chrY"]
 
 
-def test_rows_and_chroms_are_exclusive():
+def test_groups_and_chroms_are_exclusive():
     with pytest.raises(ValueError, match="chroms"):
-        pqp.Karyogram(HG38, rows=[["1"]], chroms=["1"])
+        pqp.Karyogram(HG38, groups=[["1"]], chroms=["1"])
 
 
-def test_all_rows_share_one_bp_scale():
-    kary = drawn(pqp.Karyogram(HG38, rows=2))
+def test_all_groups_share_one_bp_scale():
+    kary = drawn(pqp.Karyogram(HG38, groups=2))
     scales = [abs(pixel(p, 1e8) - pixel(p, 0)) / 1e8 for p in kary.panels().values()]
     np.testing.assert_allclose(scales, scales[0])
 
 
-def test_top_alignment_puts_p_terminals_level_and_p_on_top():
+def test_start_alignment_puts_p_terminals_level_and_p_on_top():
     kary = drawn(pqp.Karyogram(HG38, chroms=["1", "21"]))
     a, b = kary.panel("1"), kary.panel("21")
     assert pixel(a, 0) == pytest.approx(pixel(b, 0))
@@ -81,7 +81,7 @@ def test_top_alignment_puts_p_terminals_level_and_p_on_top():
 
 @pytest.mark.parametrize(
     ("align", "position"),
-    [("centromere", lambda c: sum(c.centromere) / 2), ("bottom", lambda c: c.length)],
+    [("centromere", lambda c: sum(c.centromere) / 2), ("end", lambda c: c.length)],
 )
 def test_alignment_lines_up_the_chosen_position(align, position):
     kary = drawn(pqp.Karyogram(HG38, chroms=["1", "13", "21"], align=align))
@@ -89,8 +89,8 @@ def test_alignment_lines_up_the_chosen_position(align, position):
     np.testing.assert_allclose(levels, levels[0])
 
 
-def test_names_sit_between_rows():
-    kary = drawn(pqp.Karyogram(HG38, rows=2))
+def test_names_sit_between_groups():
+    kary = drawn(pqp.Karyogram(HG38, groups=2))
     renderer = kary.figure.canvas.get_renderer()
     name = next(t for t in kary.panel("1").texts if t.get_text() == "1")
     box = name.get_window_extent(renderer)
@@ -98,7 +98,7 @@ def test_names_sit_between_rows():
     assert box.y1 < kary.panel("1").get_window_extent().y0
 
 
-def test_horizontal_rows_stack_down_with_positions_left_to_right():
+def test_horizontal_chromosomes_stack_down_with_positions_left_to_right():
     kary = drawn(pqp.Karyogram(HG38, orientation="horizontal", chroms=["1", "2"]))
     a, b = kary.panel("1"), kary.panel("2")
     assert a.get_window_extent().y0 > b.get_window_extent().y1
@@ -113,10 +113,10 @@ def test_horizontal_names_sit_left_of_the_body():
     assert name.get_window_extent(renderer).x1 < kary.panel("2").get_window_extent().x0
 
 
-TRACKS = [pqp.Track("genes", size=1.0), pqp.Track("cnv", side="below", size=1.5)]
+TRACKS = [pqp.Track("genes", size=1.0), pqp.Track("cnv", side="after", size=1.5)]
 
 
-def test_horizontal_tracks_sit_above_and_below_the_body():
+def test_horizontal_tracks_sit_before_and_after_the_body():
     kary = drawn(pqp.Karyogram(HG38, orientation="horizontal", chroms=["1"], tracks=TRACKS))
     genes, body, cnv = (kary.panel("1", t).get_window_extent() for t in ("genes", None, "cnv"))
     assert genes.y0 > body.y1
@@ -168,7 +168,7 @@ def test_bodies_follow_the_bands_flag():
 
 
 def test_mouse_karyogram_draws_without_warnings():
-    drawn(pqp.Karyogram(MM39, rows=2))
+    drawn(pqp.Karyogram(MM39, groups=2))
 
 
 def test_body_width_stays_fixed_in_points_in_its_own_figure():
@@ -200,7 +200,7 @@ def test_track_rejects_an_unknown_side():
     ("orientation", "labeled"), [("vertical", "chr1"), ("horizontal", "chr13")]
 )
 def test_track_value_axis_shows_once_on_the_edge_away_from_the_names(orientation, labeled):
-    kary = pqp.Karyogram(HG38, orientation=orientation, rows=2, tracks=TRACKS)
+    kary = pqp.Karyogram(HG38, orientation=orientation, groups=2, tracks=TRACKS)
     panels = kary.panels("cnv")
     value = "xaxis" if orientation == "vertical" else "yaxis"
     along = "yaxis" if orientation == "vertical" else "xaxis"

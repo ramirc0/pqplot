@@ -128,7 +128,7 @@ def test_paint_rejects_bad_arguments(kwargs, match):
 
 def test_paint_in_a_user_axes_with_a_legend_keeps_layout_clean():
     fig, (a, b) = plt.subplots(1, 2, layout="constrained", figsize=(8, 4))
-    kary = pqp.Karyogram(HG38, ax=a, rows=2)
+    kary = pqp.Karyogram(HG38, ax=a, groups=2)
     kary.paint(SEGMENTS, start="start", end="end", color="state")
     legend = kary.legend()
     fig.draw_without_rendering()

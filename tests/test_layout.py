@@ -19,16 +19,16 @@ def test_wrap_splits_items_into_even_groups_in_order():
 
 
 def test_wrap_rejects_fewer_than_one_group():
-    with pytest.raises(ValueError, match="rows"):
+    with pytest.raises(ValueError, match="groups"):
         layout.wrap([1], 0)
 
 
-def test_top_alignment_starts_every_chromosome_at_zero():
-    assert layout.bounds(ROW, "top") == [(0, 1000), (0, 1000), (0, 1000)]
+def test_start_alignment_starts_every_chromosome_at_zero():
+    assert layout.bounds(ROW, "start") == [(0, 1000), (0, 1000), (0, 1000)]
 
 
-def test_bottom_alignment_ends_every_chromosome_together():
-    assert layout.bounds(ROW, "bottom") == [(0, 1000), (-200, 800), (-400, 600)]
+def test_end_alignment_ends_every_chromosome_together():
+    assert layout.bounds(ROW, "end") == [(0, 1000), (-200, 800), (-400, 600)]
 
 
 def test_centromere_alignment_lines_up_centromere_midpoints():
@@ -48,8 +48,8 @@ def test_bounds_reject_an_unknown_alignment():
         layout.bounds(ROW, "middle")
 
 
-def test_slots_put_tracks_above_then_body_then_below():
-    slots = layout.slots([("genes", 1.0)], copies=2, below=[("cnv", 1.5)])
+def test_slots_put_tracks_before_then_body_then_after():
+    slots = layout.slots([("genes", 1.0)], copies=2, after=[("cnv", 1.5)])
     assert [s.track for s in slots] == ["genes", None, "cnv"]
     body = slots[1]
     assert body.start == pytest.approx(1 + layout.TRACK_GAP)
@@ -58,11 +58,11 @@ def test_slots_put_tracks_above_then_body_then_below():
 
 
 def test_body_alone_is_one_slot_at_zero():
-    assert layout.slots([], copies=1, below=[]) == [layout.Slot(None, 0.0, 1.0)]
+    assert layout.slots([], copies=1, after=[]) == [layout.Slot(None, 0.0, 1.0)]
 
 
-def grid(spans=(1000.0, 500.0), columns=3, below=()):
-    return layout.Grid(spans, columns, layout.slots([], copies=1, below=list(below)))
+def grid(spans=(1000.0, 500.0), columns=3, after=()):
+    return layout.Grid(spans, columns, layout.slots([], copies=1, after=list(after)))
 
 
 def test_groups_share_one_bp_scale_and_fill_the_along_extent():
@@ -104,7 +104,7 @@ def test_extent_measures_the_grid_at_a_given_scale():
     across=st.floats(50, 2000),
 )
 def test_cells_stay_inside_the_host_and_do_not_overlap(spans, columns, tracks, along, across):
-    g = grid(tuple(spans), columns, below=[(str(i), s) for i, s in enumerate(tracks)])
+    g = grid(tuple(spans), columns, after=[(str(i), s) for i, s in enumerate(tracks)])
     cells = [
         g.cell(i, j, slot, along, across)
         for i in range(len(spans))

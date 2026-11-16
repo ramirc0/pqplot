@@ -6,7 +6,7 @@ from matplotlib.colors import to_rgba
 import pqplot as pqp
 
 HG38 = pqp.Genome.bundled("hg38")
-TRACKS = [pqp.Track("genes"), pqp.Track("cnv", side="below")]
+TRACKS = [pqp.Track("genes"), pqp.Track("cnv", side="after")]
 POINTS = {
     "chrom": ["chr2", "chr1", "chr1", "chrM"],
     "pos": [5e6, 3e6, 1e6, 10.0],
@@ -116,7 +116,7 @@ def test_scatter_markers_have_no_halo_unless_asked():
 
 @pytest.mark.parametrize("orientation", ["vertical", "horizontal"])
 def test_value_axis_labels_clear_the_chromosome_names(orientation):
-    kary = pqp.Karyogram(HG38, orientation=orientation, rows=2, tracks=TRACKS)
+    kary = pqp.Karyogram(HG38, orientation=orientation, groups=2, tracks=TRACKS)
     kary.track("cnv").scatter(POINTS, pos="pos", value="log2")
     kary.figure.draw_without_rendering()
     renderer = kary.figure.canvas.get_renderer()

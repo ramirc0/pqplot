@@ -3,8 +3,8 @@
 A karyogram lays chromosomes out in groups. The along axis runs down a
 vertical karyogram and right across a horizontal one. Groups follow each
 other along it, and the chromosomes of a group sit side by side across it.
-Each chromosome column holds its slots: tracks above, the body, and tracks
-below. Across sizes are in body widths. Along sizes are in bp.
+Each chromosome column holds its slots: tracks before the body, the body,
+and tracks after it. Across sizes are in body widths. Along sizes are in bp.
 """
 
 from __future__ import annotations
@@ -24,17 +24,17 @@ COLUMN_GAP = 1.0
 GROUP_GAP = 24.0
 """Space between groups, in points. It holds the chromosome names."""
 
-Align = Literal["top", "centromere", "bottom"]
+Align = Literal["start", "centromere", "end"]
 
 
-def wrap[T](items: Sequence[T], rows: int) -> list[list[T]]:
+def wrap[T](items: Sequence[T], groups: int) -> list[list[T]]:
     """Split items into groups of even size, in order.
 
     Parameters
     ----------
     items : sequence
         Items to split.
-    rows : int
+    groups : int
         Number of groups. Fewer come back when there are fewer items.
 
     Returns
@@ -44,16 +44,16 @@ def wrap[T](items: Sequence[T], rows: int) -> list[list[T]]:
     Raises
     ------
     ValueError
-        If `rows` is less than 1.
+        If `groups` is less than 1.
 
     Examples
     --------
     >>> wrap([1, 2, 3, 4, 5], 2)
     [[1, 2, 3], [4, 5]]
     """
-    if rows < 1:
-        raise ValueError(f"rows must be at least 1, got {rows}")
-    size = -(-len(items) // rows)
+    if groups < 1:
+        raise ValueError(f"groups must be at least 1, got {groups}")
+    size = -(-len(items) // groups)
     return [list(items[i : i + size]) for i in range(0, len(items), size)]
 
 
@@ -67,7 +67,7 @@ def bounds(chromosomes: Sequence[Chromosome], align: Align) -> list[tuple[float,
     ----------
     chromosomes : sequence of Chromosome
         Chromosomes of one group.
-    align : {"top", "centromere", "bottom"}
+    align : {"start", "centromere", "end"}
         Line up the starts, the centromere midpoints, or the ends. A
         telocentric or unknown centromere counts as position 0.
 
@@ -84,16 +84,16 @@ def bounds(chromosomes: Sequence[Chromosome], align: Align) -> list[tuple[float,
     Examples
     --------
     >>> row = [Chromosome("1", 1000, centromere=(400, 500)), Chromosome("2", 600)]
-    >>> bounds(row, "bottom")
+    >>> bounds(row, "end")
     [(0, 1000), (-400, 600)]
     """
     longest = max(c.length for c in chromosomes)
-    if align == "top":
+    if align == "start":
         return [(0, longest) for _ in chromosomes]
-    if align == "bottom":
+    if align == "end":
         return [(c.length - longest, c.length) for c in chromosomes]
     if align != "centromere":
-        raise ValueError(f"align must be top, centromere or bottom, got {align!r}")
+        raise ValueError(f"align must be start, centromere or end, got {align!r}")
     mids = [sum(c.centromere) / 2 if c.centromere else 0.0 for c in chromosomes]
     p = max(mids)
     q = max(c.length - mid for c, mid in zip(chromosomes, mids, strict=True))
@@ -125,13 +125,13 @@ class Slot:
 
 
 def slots(
-    above: Sequence[tuple[str, float]], copies: int, below: Sequence[tuple[str, float]]
+    before: Sequence[tuple[str, float]], copies: int, after: Sequence[tuple[str, float]]
 ) -> list[Slot]:
     """Stack the tracks and the body across one chromosome column.
 
     Parameters
     ----------
-    above, below : sequence of (str, float)
+    before, after : sequence of (str, float)
         Track names and sizes in body widths, before and after the body.
     copies : int
         Number of copies drawn side by side in the body slot.
@@ -143,10 +143,10 @@ def slots(
 
     Examples
     --------
-    >>> [s.track for s in slots([("genes", 1.0)], copies=1, below=[])]
+    >>> [s.track for s in slots([("genes", 1.0)], copies=1, after=[])]
     ['genes', None]
     """
-    stack = [*above, (None, copies + (copies - 1) * COPY_GAP), *below]
+    stack = [*before, (None, copies + (copies - 1) * COPY_GAP), *after]
     result, start = [], 0.0
     for track, size in stack:
         result.append(Slot(track, start, size))
@@ -173,7 +173,7 @@ class Grid:
 
     Examples
     --------
-    >>> grid = Grid((1000.0,), 2, slots([], copies=1, below=[]))
+    >>> grid = Grid((1000.0,), 2, slots([], copies=1, after=[]))
     >>> grid.cell(0, 1, grid.slots[0], along=100, across=30)
     (0.0, 100.0, 20.0, 30.0)
     """
@@ -188,7 +188,7 @@ class Grid:
 
         Examples
         --------
-        >>> Grid((1.0,), 1, slots([("a", 1.0)], copies=1, below=[])).width
+        >>> Grid((1.0,), 1, slots([("a", 1.0)], copies=1, after=[])).width
         2.2
         """
         last = self.slots[-1]
@@ -216,7 +216,7 @@ class Grid:
 
         Examples
         --------
-        >>> grid = Grid((300.0, 100.0), 1, slots([], copies=1, below=[]))
+        >>> grid = Grid((300.0, 100.0), 1, slots([], copies=1, after=[]))
         >>> grid.cell(1, 0, grid.slots[0], along=424, across=10)
         (324.0, 424.0, 0.0, 10.0)
         """
@@ -244,7 +244,7 @@ class Grid:
 
         Examples
         --------
-        >>> Grid((1000.0,), 2, slots([], copies=1, below=[])).extent(0.1, 10)
+        >>> Grid((1000.0,), 2, slots([], copies=1, after=[])).extent(0.1, 10)
         (100.0, 30.0)
         """
         along = sum(self.spans) * points_per_bp + (len(self.spans) - 1) * GROUP_GAP

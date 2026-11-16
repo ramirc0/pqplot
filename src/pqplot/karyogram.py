@@ -52,25 +52,25 @@ class Track:
     ----------
     name : str
         Name used to find the track's panels.
-    side : {"above", "below"}, default "above"
-        Side of the body. In a vertical karyogram, above is left and below
-        is right.
+    side : {"before", "after"}, default "before"
+        Side of the body, in order across the chromosome column. Before is
+        left of a vertical karyogram and above a horizontal one.
     size : float, default 2
         Width across the chromosome, in body widths.
 
     Examples
     --------
-    >>> Track("cnv", side="below", size=1.5).size
+    >>> Track("cnv", side="after", size=1.5).size
     1.5
     """
 
     name: str
-    side: Literal["above", "below"] = "above"
+    side: Literal["before", "after"] = "before"
     size: float = 2.0
 
     def __post_init__(self):
-        if self.side not in ("above", "below"):
-            raise ValueError(f"side must be above or below, got {self.side!r}")
+        if self.side not in ("before", "after"):
+            raise ValueError(f"side must be before or after, got {self.side!r}")
 
 
 class Karyogram:
@@ -90,16 +90,17 @@ class Karyogram:
     orientation : {"vertical", "horizontal"}, default "vertical"
         Direction of the chromosomes. A horizontal karyogram is the vertical
         one transposed.
-    rows : int or sequence of sequence of str, default 1
+    groups : int or sequence of sequence of str, default 1
         Number of groups to wrap the chromosomes into, or the chromosome
         names of each group. Groups stack down a vertical karyogram and sit
         side by side in a horizontal one.
-    align : {"top", "centromere", "bottom"}, default "top"
+    align : {"start", "centromere", "end"}, default "start"
         What lines up within a group: the starts, the centromeres or the
-        ends. In a horizontal karyogram, top is left.
+        ends. Starts are at the top of a vertical karyogram and on the left
+        of a horizontal one.
     chroms : sequence of str, optional
         Chromosomes to draw, in order. By default, all of `genome`. Not
-        allowed with explicit `rows`.
+        allowed with explicit `groups`.
     copies : int, default 1
         Copies of each chromosome drawn side by side, such as 2 for
         homologs.
@@ -123,7 +124,7 @@ class Karyogram:
     Examples
     --------
     >>> from pqplot import Genome
-    >>> kary = Karyogram(Genome.bundled("hg38"), rows=2, align="centromere")
+    >>> kary = Karyogram(Genome.bundled("hg38"), groups=2, align="centromere")
     >>> len(kary.panels())
     24
     """
@@ -134,8 +135,8 @@ class Karyogram:
         ax: Axes | None = None,
         *,
         orientation: Orientation = "vertical",
-        rows: int | Sequence[Sequence[str]] = 1,
-        align: layout.Align = "top",
+        groups: int | Sequence[Sequence[str]] = 1,
+        align: layout.Align = "start",
         chroms: Sequence[str] | None = None,
         copies: int = 1,
         bands: bool = True,
@@ -148,21 +149,21 @@ class Karyogram:
         names = [t.name for t in tracks]
         if len(set(names)) < len(names):
             raise ValueError(f"track names must be unique, got {names}")
-        if isinstance(rows, int):
+        if isinstance(groups, int):
             chosen = [genome[c] for c in chroms] if chroms is not None else list(genome)
-            groups = layout.wrap(chosen, rows)
+            grouped = layout.wrap(chosen, groups)
         elif chroms is not None:
-            raise ValueError("pass chroms or explicit rows, not both")
+            raise ValueError("pass chroms or explicit groups, not both")
         else:
-            groups = [[genome[c] for c in row] for row in rows]
-        limits = [layout.bounds(group, align) for group in groups]
+            grouped = [[genome[c] for c in group] for group in groups]
+        limits = [layout.bounds(group, align) for group in grouped]
         grid = layout.Grid(
             tuple(bounds[0][1] - bounds[0][0] for bounds in limits),
-            max(len(group) for group in groups),
+            max(len(group) for group in grouped),
             layout.slots(
-                [(t.name, t.size) for t in tracks if t.side == "above"],
+                [(t.name, t.size) for t in tracks if t.side == "before"],
                 copies,
-                [(t.name, t.size) for t in tracks if t.side == "below"],
+                [(t.name, t.size) for t in tracks if t.side == "after"],
             ),
         )
         self._sized_to_content = ax is None
@@ -177,7 +178,7 @@ class Karyogram:
         body = next(s for s in grid.slots if s.track is None)
         tracks_first: dict[str, Axes] = {}
         along, value = ("sharey", "sharex") if orientation == "vertical" else ("sharex", "sharey")
-        for g, group in enumerate(groups):
+        for g, group in enumerate(grouped):
             for j, (chromosome, (lo, hi)) in enumerate(zip(group, limits[g], strict=True)):
                 key = chrom_key(chromosome.name)
                 panel = add_panel(ax, partial(grid.cell, g, j, body), orientation)
@@ -195,7 +196,7 @@ class Karyogram:
                         orientation,
                         **{along: panel, value: first},
                     )
-                    edge = 0 if orientation == "vertical" else len(groups) - 1
+                    edge = 0 if orientation == "vertical" else len(grouped) - 1
                     _style_track(track, orientation, labels=(g, j) == (edge, 0))
                     tracks_first.setdefault(slot.track, track)
                     self._panels[key, slot.track] = track
@@ -387,7 +388,7 @@ class Karyogram:
         Examples
         --------
         >>> from pqplot import Genome
-        >>> kary = Karyogram(Genome.bundled("hg38"), rows=2)
+        >>> kary = Karyogram(Genome.bundled("hg38"), groups=2)
         >>> segments = {"chrom": ["chr1", "chr7"], "start": [0, 5e6], "end": [4e7, 9e6],
         ...             "state": ["gain", "loss"]}
         >>> kary.paint(segments, start="start", end="end", color="state")
