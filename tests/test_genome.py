@@ -228,3 +228,8 @@ def test_concatenated_position_is_vectorized(three):
 
 def test_concatenated_position_accepts_scalars(three):
     assert three.concatenated().position("chr2", 5) == 105
+
+
+@pytest.mark.parametrize(("name", "label"), [("chr1", "1"), ("X", "X"), ("chrM", "M")])
+def test_chromosome_label_drops_the_chr_prefix(name, label):
+    assert Chromosome(name, 10).label == label

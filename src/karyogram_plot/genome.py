@@ -142,6 +142,17 @@ class Chromosome:
     centromere: tuple[int, int] | None = None
 
     @property
+    def label(self) -> str:
+        """Display name without the ``chr`` prefix.
+
+        Examples
+        --------
+        >>> Chromosome("chrX", 1000).label
+        'X'
+        """
+        return self.name.removeprefix("chr")
+
+    @property
     def telocentric(self) -> bool:
         """Whether the centromere sits at position 0.
 

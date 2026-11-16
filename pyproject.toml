@@ -13,11 +13,18 @@ requires = ["uv_build>=0.13,<0.14"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = ["pytest", "ruff"]
+dev = [
+    "poikilos",
+    "pytest",
+    "ruff",
+]
 
 [tool.uv]
 exclude-newer = "7d"
 exclude-newer-package = { certifi = false }
+
+[tool.uv.sources]
+poikilos = { git = "https://github.com/ramirc0/poikilos" }
 
 [tool.ruff]
 line-length = 100
