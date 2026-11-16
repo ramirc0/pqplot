@@ -13,12 +13,14 @@ from matplotlib.artist import Artist
 from matplotlib.axes import Axes
 from matplotlib.cm import ScalarMappable
 from matplotlib.collections import PathCollection
+from matplotlib.colorbar import Colorbar
 from matplotlib.colors import Colormap, Normalize, to_rgba_array
 from matplotlib.figure import Figure
 from matplotlib.legend import Legend
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, StepPatch
 from matplotlib.ticker import MaxNLocator
+from matplotlib.transforms import Bbox
 from matplotlib.typing import ColorType
 
 from pqplot import layout
@@ -36,6 +38,10 @@ NAME_POINTS = {"vertical": 16.0, "horizontal": 40.0}
 """Room for chromosome names in a karyogram's own figure, in points."""
 PAD_POINTS = 6.0
 """Room for the layout engine's padding in a karyogram's own figure, in points."""
+COLORBAR_POINTS = (7.0, 144.0)
+"""Width and longest length of a colorbar, in points."""
+COLORBAR_GAP = 8.0
+"""Space between the karyogram and its colorbar, in points."""
 
 
 @dataclass(frozen=True)
@@ -425,6 +431,45 @@ class Karyogram:
                 ideo.paint(s0, s1, swatches[c])
         return mappable
 
+    def colorbar(self, mappable: ScalarMappable, label: str | None = None, **kwargs) -> Colorbar:
+        """Draw a colorbar right of the karyogram, top-aligned.
+
+        The bar is `COLORBAR_POINTS` in size, whatever the size of the
+        karyogram. When the karyogram made its own figure, the figure widens
+        to hold the bar, so the chromosomes keep their size. A legend also
+        sits at the top right, so move one of them when drawing both.
+
+        Parameters
+        ----------
+        mappable : matplotlib.cm.ScalarMappable
+            Color scale, such as the return value of `paint` or
+            `TrackPanels.heatmap`.
+        label : str, optional
+            Label along the bar.
+        **kwargs
+            Passed to `matplotlib.figure.Figure.colorbar`.
+
+        Returns
+        -------
+        matplotlib.colorbar.Colorbar
+
+        Examples
+        --------
+        >>> from pqplot import Genome
+        >>> kary = Karyogram(Genome.bundled("hg38"), chroms=["1"])
+        >>> bins = {"chrom": ["1"], "start": [0], "end": [1e6], "n": [7.0]}
+        >>> heat = kary.paint(bins, start="start", end="end", value="n")
+        >>> kary.colorbar(heat, label="cCREs per Mb").ax.get_ylabel()
+        'cCREs per Mb'
+        """
+        cax = self.ax.inset_axes([1, 0, 0, 1])
+        cax.set_axes_locator(partial(_beside, self.ax))
+        bar = self.figure.colorbar(mappable, cax=cax, label=label, **kwargs)
+        if self._sized_to_content:
+            room = cax.get_tightbbox().width / self.figure.dpi + COLORBAR_GAP / 72
+            self.figure.set_figwidth(self.figure.get_figwidth() + room)
+        return bar
+
     def legend(self, title: str | None = None, **kwargs) -> Legend:
         """Draw a legend of the categories painted or marked so far.
 
@@ -461,6 +506,18 @@ class Karyogram:
         if self._sized_to_content:
             self.figure.set_figwidth(self.figure.get_figwidth() + _inches(legend) - room)
         return legend
+
+
+def _beside(host: Axes, cax: Axes, renderer) -> Bbox:
+    """Place a colorbar right of the host, top-aligned, with a fixed size in points."""
+    box = host.bbox
+    pixels_per_point = host.figure.dpi / 72
+    width, longest = (size * pixels_per_point for size in COLORBAR_POINTS)
+    height = min(box.height, longest)
+    x0 = box.x1 + COLORBAR_GAP * pixels_per_point
+    return Bbox.from_bounds(x0, box.y1 - height, width, height).transformed(
+        host.figure.transSubfigure.inverted()
+    )
 
 
 def _inches(artist: Artist) -> float:

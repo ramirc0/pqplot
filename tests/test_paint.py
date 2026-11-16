@@ -1,3 +1,5 @@
+import warnings
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -163,3 +165,41 @@ def test_a_second_legend_replaces_the_first_without_growing_again():
     width = kary.figure.get_figwidth()
     kary.legend()
     assert kary.figure.get_figwidth() == pytest.approx(width)
+
+
+def bins(chroms):
+    return {
+        "chrom": chroms,
+        "start": [0.0] * len(chroms),
+        "end": [5e6] * len(chroms),
+        "n": np.arange(len(chroms), dtype=float),
+    }
+
+
+def test_colorbar_widens_the_karyogram_own_figure_and_keeps_body_width():
+    kary = pqp.Karyogram(HG38, chroms=["1", "2"])
+    kary.figure.draw_without_rendering()
+    before = body_points(kary), kary.figure.get_figwidth()
+    heat = kary.paint(bins(["1", "2"]), start="start", end="end", value="n")
+    bar = kary.colorbar(heat, label="cCREs per Mb")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        kary.figure.draw_without_rendering()
+    assert body_points(kary) == pytest.approx(before[0], rel=0.05)
+    assert kary.figure.get_figwidth() > before[1]
+    assert bar.ax.yaxis.get_label().get_text() == "cCREs per Mb"
+    host, cax = kary.ax.get_window_extent(), bar.ax.get_window_extent()
+    assert cax.x0 > host.x1
+    assert cax.width * 72 / kary.figure.dpi == pytest.approx(pqp.karyogram.COLORBAR_POINTS[0])
+
+
+def test_colorbar_in_a_user_figure_keeps_its_size_and_stays_inside():
+    fig, (a, b) = plt.subplots(1, 2, figsize=(8, 4), layout="constrained")
+    kary = pqp.Karyogram(HG38, ax=a)
+    bar = kary.colorbar(kary.paint(bins(["1"]), start="start", end="end", value="n"))
+    fig.draw_without_rendering()
+    assert tuple(fig.get_size_inches()) == (8, 4)
+    assert bar.ax.get_tightbbox().x1 <= b.get_window_extent().x0
+    assert bar.ax.get_window_extent().height * 72 / fig.dpi == pytest.approx(
+        pqp.karyogram.COLORBAR_POINTS[1]
+    )
