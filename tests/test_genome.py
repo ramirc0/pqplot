@@ -328,3 +328,8 @@ def test_position_matches_float_chromosome_names(three):
 def test_offset_of_a_missing_chromosome_names_it(three):
     with pytest.raises(KeyError, match="chr9"):
         three.concatenated().offset("chr9")
+
+
+def test_concatenating_an_empty_genome_raises():
+    with pytest.raises(ValueError, match="no chromosomes"):
+        Genome([]).concatenated()

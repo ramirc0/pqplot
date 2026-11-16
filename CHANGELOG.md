@@ -20,8 +20,8 @@ document.
   chromosome is chosen by default, with a hint to pass `chroms=`.
 - `LinearGenome.position` returns NaN for positions outside their
   chromosome, so they no longer land on a neighbor. It raises `ValueError`
-  when `chrom` and `pos` differ in length. `concatenated` rejects negative
-  or infinite gaps.
+  when `chrom` and `pos` differ in length. `concatenated` rejects empty
+  genomes and negative or infinite gaps.
 - `Karyogram` raises `ValueError` when there is nothing to draw, a group is
   empty, a chromosome is drawn twice, `chroms` or a group is one string, or
   `copies` is not a whole number. `Track` rejects empty names and sizes that

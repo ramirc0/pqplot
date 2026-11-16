@@ -446,7 +446,7 @@ class Genome:
         Raises
         ------
         ValueError
-            If `gap` is negative or not finite.
+            If the genome is empty or `gap` is negative or not finite.
 
         Examples
         --------
@@ -470,7 +470,7 @@ class LinearGenome:
     Raises
     ------
     ValueError
-        If `gap` is negative or not finite.
+        If the genome is empty or `gap` is negative or not finite.
 
     Examples
     --------
@@ -480,6 +480,8 @@ class LinearGenome:
     """
 
     def __init__(self, genome: Genome, gap: float = 0):
+        if not len(genome):
+            raise ValueError("genome has no chromosomes to lay out")
         if not (np.isfinite(gap) and gap >= 0):
             raise ValueError(f"gap must be a finite number of bp from 0 up, got {gap}")
         self.genome = genome
@@ -487,7 +489,7 @@ class LinearGenome:
         self._spans = {
             chrom_key(c.name): (start, c.length) for c, start in zip(genome, starts, strict=False)
         }
-        self.length = float(max(starts[-1] - gap, 0))
+        self.length = float(starts[-1] - gap)
 
     def offset(self, chrom: str) -> float:
         """Return the axis position where a chromosome starts.
