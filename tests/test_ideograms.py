@@ -294,3 +294,78 @@ def test_paint_takes_one_color_or_one_per_span():
     assert len(ideo.paint([0, 5e7], [1e7, 6e7], "C1").get_facecolors()) == 1
     with pytest.raises(ValueError, match="colors"):
         ideo.paint([0, 5e7], [1e7, 6e7], ["C1", "C2", "C3"])
+
+
+def test_band_labels_thin_out_on_an_inverted_axis():
+    ideo = pqp.ideogram(HG38["chr1"])
+    ideo.figure.draw_without_rendering()
+    names = {band.name for band in HG38["chr1"].bands}
+    upright = sum(t.get_visible() for t in ideo.axes.texts if t.get_text() in names)
+    ideo.axes.invert_xaxis()
+    ideo.figure.draw_without_rendering()
+    inverted = sum(t.get_visible() for t in ideo.axes.texts if t.get_text() in names)
+    assert inverted == pytest.approx(upright, abs=2)
+
+
+def test_zoom_lines_pass_behind_the_band_labels():
+    ideo, _, _, lines = m1(BRCA1)
+    labels = [t for t in ideo.axes.texts if t.get_text() != "chr17"]
+    assert lines.get_zorder() < ideo.axes.get_zorder()
+    assert all(t.get_bbox_patch() is not None for t in labels)
+
+
+def test_zoom_rejects_a_target_in_another_figure():
+    ideo = pqp.ideogram(HG38["chr17"])
+    _, elsewhere = plt.subplots()
+    with pytest.raises(ValueError, match="figure"):
+        ideo.zoom(BRCA1, into=elsewhere)
+
+
+def test_zoom_rejects_a_region_beyond_the_chromosome():
+    fig, (head, body) = plt.subplots(2, 1)
+    ideo = pqp.ideogram(HG38["chr17"], ax=head)
+    end = HG38["chr17"].length
+    with pytest.raises(ValueError, match="outside"):
+        ideo.zoom(pqp.Region("chr17", end + 10, end + 20), into=body)
+
+
+def test_chromosome_axis_called_again_replaces_its_ticks_and_shading():
+    fig, ax = plt.subplots()
+    pqp.chromosome_axis(HG38.concatenated(), ax)
+    pqp.chromosome_axis(pqp.Genome([HG38["chr1"], HG38["chr2"]]).concatenated(), ax)
+    fig.draw_without_rendering()
+    assert [t.get_text() for t in ax.get_xticklabels()] == ["1", "2"]
+    assert len([c for c in ax.collections if c.get_gid() == "chromosome-shade"]) == 1
+
+
+def test_chromosome_axis_shade_none_draws_no_shading():
+    fig, ax = plt.subplots()
+    assert pqp.chromosome_axis(HG38.concatenated(), ax, shade=None) is None
+    assert not ax.collections
+
+
+def test_paint_accepts_scalars_and_rejects_reversed_or_unpaired_spans():
+    ideo = pqp.ideogram(HG38["chr9"])
+    assert len(ideo.paint(1e7, 2e7, "tab:red").get_paths()) == 1
+    with pytest.raises(ValueError, match="before"):
+        ideo.paint([5e7], [1e7], "tab:red")
+    with pytest.raises(ValueError, match="length"):
+        ideo.paint([1e7, 2e7], [3e7], "tab:red")
+
+
+def test_ideogram_outline_takes_clip_on():
+    fig, ax = plt.subplots()
+    assert pqp.Ideogram(HG38["chr1"], ax, clip_on=True).get_clip_on()
+
+
+def test_band_labels_under_the_locus_box_hide():
+    ideo, _, box, _ = m1(BRCA1)
+    renderer = ideo.figure.canvas.get_renderer()
+    edge = box.get_window_extent(renderer)
+    shown = [t for t in ideo.axes.texts if t.get_visible() and t.get_text() != "chr17"]
+    assert shown
+    assert not [
+        t.get_text()
+        for t in shown
+        if t.get_window_extent(renderer).x0 < edge.x1 and edge.x0 < t.get_window_extent(renderer).x1
+    ]

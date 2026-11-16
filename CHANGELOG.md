@@ -48,6 +48,14 @@ document.
   so a horizontal karyogram of a few chromosomes no longer clips them.
 - A karyogram's own figure leaves room for chromosome names at larger font
   sizes.
+- `chromosome_axis` called again on one Axes replaces its ticks and shading.
+  A second genome used to crash at draw time. `shade=None` draws no shading.
+- Band labels thin out correctly on an inverted x axis.
+- `Ideogram.zoom` lines pass behind the band labels, and labels under the
+  locus box hide. It rejects regions past the chromosome end and target
+  Axes in another figure.
+- `Ideogram.paint` takes scalars and rejects reversed spans or starts and
+  ends of different lengths. `Ideogram` takes `clip_on=`.
 
 ## [0.1.0] - 2026-11-15
 

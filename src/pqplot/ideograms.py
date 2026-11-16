@@ -34,6 +34,8 @@ STRIP_HALF = 0.3
 """Body half-width in a genome strip, as a share of half the Axes height."""
 MIN_PAINT_POINTS = 1.5
 """Smallest width of a painted span, in points."""
+LABEL_ZORDER = 3.0
+"""Layer of band and chromosome labels below a body."""
 OVERSHOOT = 1.2
 
 
@@ -97,6 +99,7 @@ class Ideogram(PathPatch):
         if orientation not in ("horizontal", "vertical"):
             raise ValueError(f"orientation must be horizontal or vertical, got {orientation!r}")
         kwargs = {
+            "clip_on": False,
             "facecolor": "none",
             "edgecolor": plt.rcParams["axes.edgecolor"],
             "linewidth": 0.5,
@@ -104,7 +107,7 @@ class Ideogram(PathPatch):
             "gid": f"{chromosome.name}-outline",
             **kwargs,
         }
-        super().__init__(Path(np.zeros((1, 2))), clip_on=False, **kwargs)
+        super().__init__(Path(np.zeros((1, 2))), **kwargs)
         self.chromosome = chromosome
         self.orientation = orientation
         self.offset = offset
@@ -185,7 +188,7 @@ class Ideogram(PathPatch):
 
         Parameters
         ----------
-        starts, ends : array-like of float
+        starts, ends : float or array-like of float
             Spans along the chromosome in bp.
         colors : color or sequence of color
             One color for every span, or one per span.
@@ -200,7 +203,8 @@ class Ideogram(PathPatch):
         Raises
         ------
         ValueError
-            If the number of colors matches neither 1 nor the spans.
+            If starts and ends differ in length, a span ends before it
+            starts, or the number of colors matches neither 1 nor the spans.
 
         Examples
         --------
@@ -210,7 +214,12 @@ class Ideogram(PathPatch):
         >>> len(fills.get_facecolors())
         2
         """
-        starts, ends = np.asarray(starts, dtype=float), np.asarray(ends, dtype=float)
+        starts = np.atleast_1d(np.asarray(starts, dtype=float))
+        ends = np.atleast_1d(np.asarray(ends, dtype=float))
+        if starts.shape != ends.shape:
+            raise ValueError(f"starts and ends differ in length: {len(starts)} and {len(ends)}")
+        if np.any(ends < starts):
+            raise ValueError("a span ends before it starts")
         colors = to_rgba_array(colors)
         if len(colors) not in (1, len(starts)):
             raise ValueError(f"got {len(colors)} colors for {len(starts)} spans")
@@ -260,7 +269,10 @@ class Ideogram(PathPatch):
 
         The box keeps a width of at least `MIN_BOX_POINTS`, so small loci
         stay visible. Two lines join the box to the near corners of the
-        target Axes. Both are placed at draw time and follow layout changes.
+        target Axes, which sits above or below a horizontal ideogram, or
+        beside a vertical one. The lines pass behind the band labels, and
+        labels under the box hide. Both are placed at draw time and follow
+        layout changes.
 
         Parameters
         ----------
@@ -279,7 +291,8 @@ class Ideogram(PathPatch):
         Raises
         ------
         ValueError
-            If the region lies on another chromosome.
+            If the region lies on another chromosome or outside this one, or
+            the target Axes is in another figure.
 
         Examples
         --------
@@ -293,17 +306,28 @@ class Ideogram(PathPatch):
         """
         if chrom_key(region.chrom) != chrom_key(self.chromosome.name):
             raise ValueError(f"region on {region.chrom} is not on {self.chromosome.name}")
+        if region.end > self.chromosome.length:
+            raise ValueError(
+                f"region ends at {region.end}, outside {self.chromosome.name} "
+                f"(0 to {self.chromosome.length})"
+            )
+        if into.get_figure(root=True) is not self.get_figure(root=True):
+            raise ValueError("the target Axes is in another figure")
         box = _LocusBox(
             self,
             region,
             edgecolor=color,
             facecolor="none",
             linewidth=0.75,
-            zorder=self.get_zorder() + 0.1,
+            zorder=LABEL_ZORDER + 0.1,
             clip_on=False,
         )
         self.axes.add_artist(box)
-        lines = _ZoomLines(box, into, edgecolor=color, facecolor="none", linewidth=0.5)
+        for labels in self.axes.artists:
+            if isinstance(labels, _SparseLabels):
+                labels.obstacles.append(box)
+        # Below every Axes, so the lines pass behind the band labels.
+        lines = _ZoomLines(box, into, edgecolor=color, facecolor="none", linewidth=0.5, zorder=-1)
         lines.set_in_layout(False)
         self.figure.add_artist(lines)
         return box, lines
@@ -393,11 +417,12 @@ class _ZoomLines(PathPatch):
 
 
 class _SparseLabels(Artist):
-    """Shows only the labels that fit from left to right, decided at draw time."""
+    """Shows only the labels that fit from left to right and clear the obstacles."""
 
     def __init__(self, ax: Axes, texts: list[Text], gap_points: float = 2.0):
         super().__init__()
-        self.texts = sorted(texts, key=lambda t: t.get_position()[0])
+        self.texts = texts
+        self.obstacles: list[Artist] = []
         self.gap_points = gap_points
         self.set_zorder(min(t.get_zorder() for t in texts) - 0.1)
         self.set_in_layout(False)
@@ -407,11 +432,17 @@ class _SparseLabels(Artist):
         for text in self.texts:
             text.set_visible(True)
         boxes = [text.get_window_extent(renderer) for text in self.texts]
+        blocks = [o.get_window_extent(renderer) for o in self.obstacles]
+        clear = [
+            i for i, b in enumerate(boxes) if not any(b.x0 < o.x1 and o.x0 < b.x1 for o in blocks)
+        ]
+        order = sorted(clear, key=lambda i: boxes[i].x0)
         gap = renderer.points_to_pixels(self.gap_points)
-        for text, keep in zip(
-            self.texts, _fitting([(b.x0, b.x1) for b in boxes], gap), strict=True
-        ):
-            text.set_visible(keep)
+        keep = _fitting([(boxes[i].x0, boxes[i].x1) for i in order], gap)
+        for text in self.texts:
+            text.set_visible(False)
+        for i, kept in zip(order, keep, strict=True):
+            self.texts[i].set_visible(kept)
 
 
 class _SparseTicks(Artist):
@@ -554,10 +585,13 @@ def chromosome_axis(
         Chromosomes and their offsets on the axis.
     ax : matplotlib.axes.Axes
         Axes whose x axis holds concatenated positions.
-    shade : bool or color, default True
+    shade : bool, color or None, default True
         Shading of the second, fourth and later chromosomes. True blends a
-        little of the theme's foreground into the background. False draws
-        none.
+        little of the theme's foreground into the background. False or None
+        draws none.
+
+    A second call on the same Axes replaces the ticks and shading of the
+    first.
 
     Returns
     -------
@@ -575,6 +609,9 @@ def chromosome_axis(
     >>> [label.get_text() for label in ax.get_xticklabels()][:3]
     ['1', '2', '3']
     """
+    for old in ax.get_children():
+        if isinstance(old, _SparseTicks) or old.get_gid() == "chromosome-shade":
+            old.remove()
     chromosomes = list(linear.genome)
     starts = np.array([linear.offset(c.name) for c in chromosomes])
     ends = starts + [c.length for c in chromosomes]
@@ -582,7 +619,7 @@ def chromosome_axis(
     ax.tick_params(axis="x", length=0)
     _SparseTicks(ax, [c.label for c in chromosomes])
     ax.set_xlim(0, linear.length)
-    if shade is False:
+    if shade is None or shade is False:
         return None
     x0, x1 = starts[1::2], ends[1::2]
     quads = np.stack(
@@ -611,7 +648,19 @@ def _fitting(spans: list[tuple[float, float]], gap: float) -> list[bool]:
 
 
 def _below(ax: Axes, x: float, text: str, half: float) -> Text:
-    return ax.text(x, -half - 0.1, text, ha="center", va="top", fontsize="x-small", clip_on=False)
+    # A background in the figure color hides zoom lines that pass behind the label.
+    background = {"facecolor": plt.rcParams["figure.facecolor"], "edgecolor": "none", "pad": 0.5}
+    return ax.text(
+        x,
+        -half - 0.1,
+        text,
+        ha="center",
+        va="top",
+        fontsize="x-small",
+        clip_on=False,
+        bbox=background,
+        zorder=LABEL_ZORDER,
+    )
 
 
 def _blend(share: float) -> tuple[float, float, float, float]:
