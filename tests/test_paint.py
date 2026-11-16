@@ -88,7 +88,8 @@ def test_paint_without_categories_uses_one_color():
     kary = pqp.Karyogram(HG38, chroms=["1"])
     kary.paint({"chrom": ["1"], "start": [0], "end": [5e6]}, start="start", end="end")
     assert spans(fills(kary, "1")[0]) == [(0, 5e6, to_rgba("C0"))]
-    assert kary.legend().get_texts() == []
+    with pytest.raises(ValueError, match="categories"):
+        kary.legend()
 
 
 def test_paint_copies_by_column():

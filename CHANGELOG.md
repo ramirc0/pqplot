@@ -22,6 +22,13 @@ document.
   chromosome, so they no longer land on a neighbor. It raises `ValueError`
   when `chrom` and `pos` differ in length. `concatenated` rejects negative
   or infinite gaps.
+- `Karyogram` raises `ValueError` when there is nothing to draw, a group is
+  empty, a chromosome is drawn twice, `chroms` or a group is one string, or
+  `copies` is not a whole number. `Track` rejects empty names and sizes that
+  are not positive.
+- `Karyogram.legend` raises `ValueError` when no layer drew categories.
+  `Karyogram.panels` raises `KeyError` for an unknown track, as `panel`
+  does.
 
 ### Fixed
 
@@ -35,6 +42,12 @@ document.
 - `Region.parse` keeps colons in the name, as in `HLA-A*01:01:1-100`.
 - A chromosome column of floats, such as a pandas integer column with
   nulls, matches names: `1.0` finds chromosome 1.
+- A second `Karyogram.colorbar` call replaces the bar. It used to stack a
+  new bar and widen the figure again.
+- A karyogram's own figure grows in height to hold its legend or colorbar,
+  so a horizontal karyogram of a few chromosomes no longer clips them.
+- A karyogram's own figure leaves room for chromosome names at larger font
+  sizes.
 
 ## [0.1.0] - 2026-11-15
 

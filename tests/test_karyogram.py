@@ -184,6 +184,14 @@ def test_body_width_stays_fixed_in_points_in_its_own_figure():
         ({"align": "middle"}, "align"),
         ({"copies": 0}, "copies"),
         ({"tracks": [pqp.Track("a"), pqp.Track("a")]}, "unique"),
+        ({"copies": 2.5}, "copies"),
+        ({"chroms": []}, "no chromosomes"),
+        ({"chroms": "chr1"}, "names"),
+        ({"chroms": ["1", "chr1"]}, "more than once"),
+        ({"groups": []}, "no chromosomes"),
+        ({"groups": [["1"], []]}, "empty"),
+        ({"groups": ["12", "X"]}, "names"),
+        ({"groups": [["1", "2"], ["chr1"]]}, "more than once"),
     ],
 )
 def test_bad_arguments_raise(kwargs, match):
@@ -208,3 +216,60 @@ def test_track_value_axis_shows_once_on_the_edge_away_from_the_names(orientation
     assert not any(getattr(p, along).get_visible() for p in panels.values())
     side = getattr(panels[labeled], value).get_ticks_position()
     assert side == ("top" if orientation == "vertical" else "right")
+
+
+def test_karyogram_rejects_an_empty_genome():
+    with pytest.raises(ValueError, match="no chromosomes"):
+        pqp.Karyogram(pqp.Genome([]))
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"name": None}, "name"),
+        ({"name": ""}, "name"),
+        ({"size": 0}, "size"),
+        ({"size": -1}, "size"),
+        ({"size": float("nan")}, "size"),
+        ({"size": float("inf")}, "size"),
+    ],
+)
+def test_track_rejects_bad_names_and_sizes(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        pqp.Track(**{"name": "a", **kwargs})
+
+
+def test_panels_of_an_unknown_track_raise():
+    with pytest.raises(KeyError, match="zz"):
+        pqp.Karyogram(HG38, chroms=["1"]).panels("zz")
+
+
+def test_legend_without_categories_raises():
+    with pytest.raises(ValueError, match="categories"):
+        pqp.Karyogram(HG38, chroms=["1"]).legend()
+
+
+def test_a_second_colorbar_replaces_the_first():
+    kary = pqp.Karyogram(HG38, chroms=["1"])
+    bins = {"chrom": ["1"], "start": [0], "end": [1e6], "n": [3.0]}
+    heat = kary.paint(bins, start="start", end="end", value="n")
+    kary.colorbar(heat)
+    width, children = kary.figure.get_figwidth(), len(kary.ax.child_axes)
+    kary.colorbar(heat)
+    assert kary.figure.get_figwidth() == pytest.approx(width)
+    assert len(kary.ax.child_axes) == children
+
+
+def test_names_get_room_for_a_larger_font():
+    small = pqp.Karyogram(HG38).figure.get_figheight()
+    with plt.rc_context({"font.size": 20}):
+        large = pqp.Karyogram(HG38).figure.get_figheight()
+    assert large > small
+
+
+def test_a_horizontal_karyogram_grows_to_hold_its_legend():
+    kary = pqp.Karyogram(HG38, orientation="horizontal", chroms=["1"])
+    kary.paint({"chrom": ["1", "1", "1"], "s": ["a", "b", "c"]}, color="s")
+    legend = kary.legend(title="State")
+    drawn(kary)
+    assert legend.get_window_extent().height <= kary.figure.bbox.height

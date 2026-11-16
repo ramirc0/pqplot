@@ -32,7 +32,7 @@ BODY_POINTS = 7.0
 LONGEST_POINTS = {"vertical": 180.0, "horizontal": 432.0}
 """Length of the longest group in a karyogram's own figure, in points."""
 NAME_POINTS = {"vertical": 16.0, "horizontal": 40.0}
-"""Room for chromosome names in a karyogram's own figure, in points."""
+"""Room for chromosome names in a karyogram's own figure, in points at a 10 point font."""
 PAD_POINTS = 6.0
 """Room for the layout engine's padding in a karyogram's own figure, in points."""
 COLORBAR_POINTS = (7.0, 144.0)
@@ -55,6 +55,12 @@ class Track:
     size : float, default 2
         Width across the chromosome, in body widths.
 
+    Raises
+    ------
+    ValueError
+        If the name is empty, the side is unknown or the size is not
+        positive.
+
     Examples
     --------
     >>> Track("cnv", side="after", size=1.5).size
@@ -66,6 +72,12 @@ class Track:
     size: float = 2.0
 
     def __post_init__(self):
+        if not isinstance(self.name, str) or not self.name:
+            raise ValueError(f"track name must be a non-empty string, got {self.name!r}")
+        if not (np.isfinite(self.size) and self.size > 0):
+            raise ValueError(
+                f"track size must be a positive number of body widths, got {self.size}"
+            )
         if self.side not in ("before", "after"):
             raise ValueError(f"side must be before or after, got {self.side!r}")
 
@@ -109,7 +121,8 @@ class Karyogram:
     Raises
     ------
     ValueError
-        If an argument is out of range or track names repeat.
+        If an argument is out of range, track names repeat, a chromosome is
+        drawn twice, or there is nothing to draw.
     KeyError
         If a chromosome is not in `genome`.
 
@@ -141,18 +154,23 @@ class Karyogram:
     ):
         if orientation not in ("horizontal", "vertical"):
             raise ValueError(f"orientation must be horizontal or vertical, got {orientation!r}")
-        if copies < 1:
-            raise ValueError(f"copies must be at least 1, got {copies}")
+        if not isinstance(copies, int) or copies < 1:
+            raise ValueError(f"copies must be a whole number from 1 up, got {copies}")
+        if isinstance(chroms, str) or (
+            not isinstance(groups, int) and any(isinstance(g, str) for g in groups)
+        ):
+            raise ValueError("chroms and each group must be sequences of names, not one string")
         names = [t.name for t in tracks]
         if len(set(names)) < len(names):
             raise ValueError(f"track names must be unique, got {names}")
         if isinstance(groups, int):
             chosen = [genome[c] for c in chroms] if chroms is not None else list(genome)
-            grouped = layout.wrap(chosen, groups)
+            grouped = layout.wrap(chosen, groups) if chosen else []
         elif chroms is not None:
             raise ValueError("pass chroms or explicit groups, not both")
         else:
             grouped = [[genome[c] for c in group] for group in groups]
+        _check_drawable(grouped)
         limits = [layout.bounds(group, align) for group in grouped]
         grid = layout.Grid(
             tuple(bounds[0][1] - bounds[0][0] for bounds in limits),
@@ -171,6 +189,7 @@ class Karyogram:
         self._panels: dict[tuple[str, str | None], Axes] = {}
         self._ideograms: dict[str, list[Ideogram]] = {}
         self._legend: dict[str, Artist] = {}
+        self._colorbar: tuple[Colorbar, float] | None = None
         self._orientation = orientation
         self._tracks = {t.name: t for t in tracks}
         body = next(s for s in grid.slots if s.track is None)
@@ -257,6 +276,11 @@ class Karyogram:
         dict of str to matplotlib.axes.Axes
             Panels keyed by chromosome name.
 
+        Raises
+        ------
+        KeyError
+            If the karyogram has no such track.
+
         Examples
         --------
         >>> from pqplot import Genome
@@ -264,6 +288,8 @@ class Karyogram:
         >>> list(kary.panels("cnv"))
         ['chr1', 'chr2']
         """
+        if track is not None and track not in self._tracks:
+            raise KeyError(f"no track {track!r}")
         return {
             ideograms[0].chromosome.name: self._panels[key, track]
             for key, ideograms in self._ideograms.items()
@@ -434,9 +460,10 @@ class Karyogram:
         """Draw a colorbar right of the karyogram, top-aligned.
 
         The bar is `COLORBAR_POINTS` in size, whatever the size of the
-        karyogram. When the karyogram made its own figure, the figure widens
-        to hold the bar, so the chromosomes keep their size. A legend also
-        sits at the top right, so move one of them when drawing both.
+        karyogram. When the karyogram made its own figure, the figure grows
+        to hold the bar, so the chromosomes keep their size. A second call
+        replaces the bar. A legend also sits at the top right, so move one of
+        them when drawing both.
 
         Parameters
         ----------
@@ -461,12 +488,19 @@ class Karyogram:
         >>> kary.colorbar(heat, label="cCREs per Mb").ax.get_ylabel()
         'cCREs per Mb'
         """
+        old_room = 0.0
+        if self._colorbar is not None:
+            old, old_room = self._colorbar
+            old.remove()
         cax = self.ax.inset_axes([1, 0, 0, 1])
         cax.set_axes_locator(partial(_beside, self.ax))
         bar = self.figure.colorbar(mappable, cax=cax, label=label, **kwargs)
+        room = 0.0
         if self._sized_to_content:
             room = cax.get_tightbbox().width / self.figure.dpi + COLORBAR_GAP / 72
-            self.figure.set_figwidth(self.figure.get_figwidth() + room)
+            self.figure.set_figwidth(self.figure.get_figwidth() + room - old_room)
+            self._fit_height(COLORBAR_POINTS[1] / 72)
+        self._colorbar = (bar, room)
         return bar
 
     def legend(self, title: str | None = None, **kwargs) -> Legend:
@@ -481,12 +515,17 @@ class Karyogram:
             legend sits outside the host Axes, at its top right, without a
             frame.
 
-        When the karyogram made its own figure, the figure widens to hold
+        When the karyogram made its own figure, the figure grows to hold
         the legend, so the chromosomes keep their size.
 
         Returns
         -------
         matplotlib.legend.Legend
+
+        Raises
+        ------
+        ValueError
+            If nothing with categories was drawn yet.
 
         Examples
         --------
@@ -496,6 +535,8 @@ class Karyogram:
         >>> [t.get_text() for t in kary.legend(title="Split").get_texts()]
         ['test']
         """
+        if not self._legend:
+            raise ValueError("no categories to show; draw a layer with color= first")
         old = self.ax.get_legend()
         room = _inches(old) if old else -PAD_POINTS / 72
         options = {"loc": "upper left", "bbox_to_anchor": (1, 1), "frameon": False}
@@ -504,7 +545,27 @@ class Karyogram:
         )
         if self._sized_to_content:
             self.figure.set_figwidth(self.figure.get_figwidth() + _inches(legend) - room)
+            self._fit_height(legend.get_window_extent().height / self.figure.dpi)
         return legend
+
+    def _fit_height(self, inches: float) -> None:
+        """Grow the figure to at least the given height plus padding."""
+        needed = inches + 2 * PAD_POINTS / 72
+        if self.figure.get_figheight() < needed:
+            self.figure.set_figheight(needed)
+
+
+def _check_drawable(grouped: list[list[Chromosome]]) -> None:
+    """Raise unless every group has chromosomes and none repeats."""
+    if not grouped:
+        raise ValueError("no chromosomes to draw")
+    if not all(grouped):
+        raise ValueError("groups must not hold an empty group")
+    seen = set()
+    for chromosome in (c for group in grouped for c in group):
+        if chromosome.name in seen:
+            raise ValueError(f"chromosome {chromosome.name!r} is drawn more than once")
+        seen.add(chromosome.name)
 
 
 def _beside(host: Axes, cax: Axes, renderer) -> Bbox:
@@ -588,7 +649,7 @@ def _draw_body(
 def _own_axes(grid: layout.Grid, orientation: Orientation) -> Axes:
     """Make a figure sized so the grid gets its default scale."""
     along, across = grid.extent(LONGEST_POINTS[orientation] / max(grid.spans), BODY_POINTS)
-    along += NAME_POINTS[orientation]
+    along += NAME_POINTS[orientation] * plt.rcParams["font.size"] / 10
     width, height = (across, along) if orientation == "vertical" else (along, across)
     size = ((width + PAD_POINTS) / 72, (height + PAD_POINTS) / 72)
     _, ax = plt.subplots(figsize=size, layout="constrained")
