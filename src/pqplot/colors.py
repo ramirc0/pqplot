@@ -26,7 +26,7 @@ def value_scale(values: np.ndarray, cmap: object, norm: Normalize | None) -> Sca
     return scale
 
 
-def _swatch(color: np.ndarray) -> Artist:
+def swatch(color: np.ndarray) -> Artist:
     """Return a legend handle for a filled category."""
     return Patch(facecolor=color, edgecolor="none")
 
@@ -37,7 +37,7 @@ def category_colors(
     shown: np.ndarray,
     palette: Mapping | None,
     legend: dict[str, Artist],
-    handle: Callable[[np.ndarray], Artist] = _swatch,
+    handle: Callable[[np.ndarray], Artist] = swatch,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return the category index of each of `rows` rows and the category colors.
 
@@ -66,13 +66,13 @@ def category_colors(
     swatches = []
     for label in labels.tolist():
         if palette is not None:
-            swatch = to_rgba(palette[label])
+            color = to_rgba(palette[label])
         elif str(label) in legend:
-            swatch = _color_of(legend[str(label)])
+            color = _color_of(legend[str(label)])
         else:
-            swatch = to_rgba(cycle[len(legend) % len(cycle)])
-        legend[str(label)] = handle(np.array(swatch))
-        swatches.append(swatch)
+            color = to_rgba(cycle[len(legend) % len(cycle)])
+        legend[str(label)] = handle(np.array(color))
+        swatches.append(color)
     codes = np.zeros(rows, dtype=int)
     codes[shown] = shown_codes
     return codes, to_rgba_array(swatches) if swatches else np.empty((0, 4))

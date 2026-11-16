@@ -259,3 +259,34 @@ def test_paint_rejects_columns_of_different_lengths(column):
 def test_paint_names_a_missing_column():
     with pytest.raises(KeyError, match="'state'"):
         pqp.Karyogram(HG38, chroms=["1"]).paint({"chrom": ["1"]}, color="state")
+
+
+def test_legend_palette_lists_every_category_in_palette_order():
+    kary = pqp.Karyogram(HG38, chroms=["1"])
+    palette = {"loss": "tab:blue", "gain": "tab:red", "homdel": "tab:purple"}
+    kary.paint({"chrom": ["1"], "s": ["gain"]}, color="s", palette=palette)
+    legend = kary.legend(palette=palette)
+    assert [t.get_text() for t in legend.get_texts()] == ["loss", "gain", "homdel"]
+    assert [h.get_facecolor() for h in legend.legend_handles] == [
+        to_rgba(c) for c in palette.values()
+    ]
+
+
+def test_legend_palette_needs_no_drawn_layer():
+    kary = pqp.Karyogram(HG38, chroms=["1"])
+    legend = kary.legend(palette={"AFR": "C0", "EUR": "C1"})
+    assert [t.get_text() for t in legend.get_texts()] == ["AFR", "EUR"]
+
+
+def test_legend_palette_keeps_drawn_categories_it_lacks_after_it():
+    kary = pqp.Karyogram(HG38, chroms=["1"])
+    kary.paint({"chrom": ["1"], "s": ["other"]}, color="s")
+    legend = kary.legend(palette={"a": "C3"})
+    assert [t.get_text() for t in legend.get_texts()] == ["a", "other"]
+
+
+def test_legend_palette_does_not_add_categories_for_later_legends():
+    kary = pqp.Karyogram(HG38, chroms=["1"])
+    kary.paint({"chrom": ["1"], "s": ["shown"]}, color="s")
+    kary.legend(palette={"extra": "C3"})
+    assert [t.get_text() for t in kary.legend().get_texts()] == ["shown"]

@@ -128,11 +128,30 @@ kary.legend(title="Ancestry")
 
 ## Legend and colorbar
 
-- `kary.legend(title=None, **kwargs)` lists every category painted, marked or
-  drawn as intervals so far, in one legend. A category keeps one color across
-  calls. Call it after all layers. Calling it again replaces it. With no
-  categories drawn yet it raises `ValueError`. Defaults: outside the top
-  right, no frame.
+- `kary.legend(title=None, *, palette=None, **kwargs)` lists every category
+  painted, marked or drawn as intervals so far, in one legend. A category
+  keeps one color across calls. Call it after all layers. Calling it again
+  replaces it. With no categories drawn yet it raises `ValueError`. Defaults:
+  outside the top right, no frame.
+- `palette=` lists its categories first, in its order, drawn or not. Drawn
+  categories it lacks follow. Pass the palette given to the layers when one
+  karyogram per Axes splits a figure, or a sample lacks a category:
+
+```python
+import matplotlib.pyplot as plt
+
+palette = {"AFR": "C0", "EUR": "C1", "NAT": "C2"}
+samples = {
+    "s1": {"chrom": ["1", "1"], "start": [0, 1e8], "end": [1e8, 2.49e8], "a": ["AFR", "NAT"]},
+    "s2": {"chrom": ["1"], "start": [0], "end": [2.49e8], "a": ["EUR"]},
+}
+fig, axes = plt.subplots(2, 1, figsize=(6, 1.5))
+for ax, rows in zip(axes, samples.values()):
+    kary = pqp.Karyogram(hg38, ax=ax, orientation="horizontal", chroms=["1"], bands=False)
+    kary.paint(rows, start="start", end="end", color="a", palette=palette)
+kary.legend(title="Ancestry", palette=palette)  # lists AFR, EUR and NAT
+```
+
 - `kary.colorbar(mappable, label=None, **kwargs)` puts a 7 x 144 point bar
   right of the karyogram, top-aligned. It takes the return value of `paint`
   with `value=` or of a track's `heatmap`. Calling it again replaces the bar.

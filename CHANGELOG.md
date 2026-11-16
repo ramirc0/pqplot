@@ -10,6 +10,12 @@ document.
 
 ## [Unreleased]
 
+### Added
+
+- `Karyogram.legend` takes `palette=`, which lists every category of the
+  palette in its order, drawn or not. Karyograms split over several Axes can
+  then each show the full legend, even when one lacks a category.
+
 ## [0.2.0] - 2026-11-15
 
 ### Changed

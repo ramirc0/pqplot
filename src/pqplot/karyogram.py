@@ -13,14 +13,14 @@ from matplotlib.artist import Artist
 from matplotlib.axes import Axes
 from matplotlib.cm import ScalarMappable
 from matplotlib.colorbar import Colorbar
-from matplotlib.colors import Colormap, Normalize
+from matplotlib.colors import Colormap, Normalize, to_rgba
 from matplotlib.figure import Figure
 from matplotlib.legend import Legend
 from matplotlib.transforms import Bbox
 from matplotlib.typing import ColorType
 
 from pqplot import layout
-from pqplot.colors import category_colors, value_scale
+from pqplot.colors import category_colors, swatch, value_scale
 from pqplot.columns import columns, numbers, present, rows_by_chrom
 from pqplot.genome import Chromosome, Genome, chrom_key
 from pqplot.ideograms import Ideogram
@@ -519,13 +519,25 @@ class Karyogram:
         self._colorbar = (bar, room)
         return bar
 
-    def legend(self, title: str | None = None, **kwargs) -> Legend:
+    def legend(
+        self,
+        title: str | None = None,
+        *,
+        palette: Mapping[object, ColorType] | None = None,
+        **kwargs,
+    ) -> Legend:
         """Draw a legend of the categories painted or marked so far.
 
         Parameters
         ----------
         title : str, optional
             Legend title.
+        palette : mapping, optional
+            Categories to list first, in this order, whether drawn or not.
+            Categories not drawn get a swatch of their palette color, and
+            drawn ones keep their own entry. Drawn categories the palette
+            lacks follow it. Pass the palette given to the layers, so
+            karyograms split over several Axes each show every category.
         **kwargs
             Passed to `matplotlib.axes.Axes.legend`. By default, the
             legend sits outside the host Axes, at its top right, without a
@@ -541,7 +553,8 @@ class Karyogram:
         Raises
         ------
         ValueError
-            If nothing with categories was drawn yet.
+            If nothing with categories was drawn yet and `palette` is empty
+            or not given.
 
         Examples
         --------
@@ -550,14 +563,22 @@ class Karyogram:
         >>> kary.paint({"chrom": ["1"], "split": ["test"]}, color="split")
         >>> [t.get_text() for t in kary.legend(title="Split").get_texts()]
         ['test']
+        >>> splits = {"train": "C0", "test": "C1"}
+        >>> [t.get_text() for t in kary.legend(palette=splits).get_texts()]
+        ['train', 'test']
         """
-        if not self._legend:
+        entries = {
+            str(label): self._legend.get(str(label)) or swatch(to_rgba(color))
+            for label, color in (palette or {}).items()
+        }
+        entries |= {label: h for label, h in self._legend.items() if label not in entries}
+        if not entries:
             raise ValueError("no categories to show; draw a layer with color= first")
         old = self.ax.get_legend()
         room = _inches(old) if old else -PAD_POINTS / 72
         options = {"loc": "upper left", "bbox_to_anchor": (1, 1), "frameon": False}
         legend = self.ax.legend(
-            list(self._legend.values()), list(self._legend), title=title, **options | kwargs
+            list(entries.values()), list(entries), title=title, **options | kwargs
         )
         if self._sized_to_content:
             self.figure.set_figwidth(self.figure.get_figwidth() + _inches(legend) - room)
