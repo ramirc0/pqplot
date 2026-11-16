@@ -42,7 +42,8 @@ dev = [
 ]
 
 [tool.uv]
-exclude-newer = "7d"
+# uv.lock records this window, and UV_EXCLUDE_NEWER overrides it, so both must spell it "1 week".
+exclude-newer = "1 week"
 exclude-newer-package = { certifi = false }
 
 [tool.uv.sources]
