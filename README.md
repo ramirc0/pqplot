@@ -30,10 +30,8 @@ BED.
 
 ### Installing
 
-pqplot is not on PyPI yet. Install it from a checkout:
-
 ```
-uv add path/to/pqplot
+uv add pqplot
 ```
 
 ### Executing program
@@ -113,6 +111,10 @@ python -c "import pqplot; help(pqplot.Karyogram)"
 ## Authors
 
 Christian Ramirez (christian.ramirez1@umassmed.edu)
+
+## Version History
+
+See [CHANGELOG.md](https://github.com/ramirc0/pqplot/blob/main/CHANGELOG.md).
 
 ## License
 
