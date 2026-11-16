@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from typing import Literal
@@ -12,17 +12,20 @@ import numpy as np
 from matplotlib.artist import Artist
 from matplotlib.axes import Axes
 from matplotlib.cm import ScalarMappable
+from matplotlib.collections import PathCollection
 from matplotlib.colors import Colormap, Normalize, to_rgba_array
 from matplotlib.figure import Figure
 from matplotlib.legend import Legend
-from matplotlib.patches import Patch
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch, StepPatch
 from matplotlib.typing import ColorType
 
 from karyogram_plot import layout
 from karyogram_plot.columns import column, rows_by_chrom
 from karyogram_plot.genome import Chromosome, Genome, chrom_key
-from karyogram_plot.ideograms import Ideogram
+from karyogram_plot.ideograms import MIN_PAINT_POINTS, Ideogram
 from karyogram_plot.panels import Orientation, add_panel
+from karyogram_plot.spans import Spans
 
 BODY_POINTS = 7.0
 """Body width in a karyogram's own figure, in points."""
@@ -163,6 +166,7 @@ class Karyogram:
         self._panels: dict[tuple[str, str | None], Axes] = {}
         self._ideograms: dict[str, list[Ideogram]] = {}
         self._legend: dict[str, Artist] = {}
+        self._orientation = orientation
         body = next(s for s in grid.slots if s.track is None)
         tracks_first: dict[str, Axes] = {}
         along, value = ("sharey", "sharex") if orientation == "vertical" else ("sharex", "sharey")
@@ -258,6 +262,36 @@ class Karyogram:
             for key, ideograms in self._ideograms.items()
             if (key, track) in self._panels
         }
+
+    def track(self, name: str) -> TrackPanels:
+        """Return the panels of one track, to draw data into.
+
+        Parameters
+        ----------
+        name : str
+            Track name.
+
+        Returns
+        -------
+        TrackPanels
+
+        Raises
+        ------
+        KeyError
+            If the karyogram has no such track.
+
+        Examples
+        --------
+        >>> from karyogram_plot import Genome
+        >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("cnv")])
+        >>> points = kary.track("cnv").scatter({"chrom": ["chr1"], "pos": [5e6], "value": [0.3]})
+        >>> list(points)
+        ['chr1']
+        """
+        panels = self.panels(name)
+        if not panels:
+            raise KeyError(f"no track {name!r}")
+        return TrackPanels(panels, self._orientation, self._legend)
 
     def ideograms(self, chrom: str) -> list[Ideogram]:
         """Return the drawn copies of one chromosome.
@@ -368,23 +402,12 @@ class Karyogram:
         mappable = None
         if value is not None:
             values = column(data, value).astype(float)
-            mappable = ScalarMappable(norm, cmap)
-            mappable.set_array(values)
-            mappable.autoscale_None()
+            mappable = _value_scale(values, cmap, norm)
             # Each row is its own category, so no spans merge.
             codes, swatches = np.arange(len(values)), mappable.to_rgba(values)
-        elif color is None:
-            codes, swatches = np.zeros(len(chroms), dtype=int), to_rgba_array(["C0"])
         else:
-            labels, codes = _categories(column(data, color), palette)
-            cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-            swatches = to_rgba_array(
-                [cycle[i % len(cycle)] for i in range(len(labels))]
-                if palette is None
-                else [palette[x] for x in labels.tolist()]
-            )
-            for label, swatch in zip(labels, swatches, strict=True):
-                self._legend[str(label)] = Patch(facecolor=swatch, edgecolor="none")
+            categories = None if color is None else column(data, color)
+            codes, swatches = _category_colors(categories, len(chroms), palette, self._legend)
         starts = None if start is None else column(data, start).astype(float)
         ends = None if end is None else column(data, end).astype(float)
         for key, rows in rows_by_chrom(chroms).items():
@@ -441,6 +464,412 @@ class Karyogram:
 def _inches(artist: Artist) -> float:
     """Return the width of an artist in inches."""
     return artist.get_window_extent().width / artist.figure.dpi
+
+
+class TrackPanels:
+    """Draws data into one track, across every chromosome of a karyogram.
+
+    Get one from `Karyogram.track`. Each method takes a table with one row
+    per point or bin, splits the rows by chromosome and draws each group
+    into its chromosome's panel. Rows on chromosomes without a panel are
+    skipped. Positions are in bp. Panels of one track share their value
+    axis, so one call scales them all.
+
+    Each column argument is a column name in `data` or the values
+    themselves. Extra keyword arguments go to the matplotlib call. Arrays
+    and Series among them with one value per row, such as ``c`` or ``s``,
+    are split by chromosome too.
+
+    Parameters
+    ----------
+    panels : dict of str to matplotlib.axes.Axes
+        Track panels keyed by chromosome name, in drawing order.
+    orientation : {"horizontal", "vertical"}
+        Direction of the chromosomes.
+    legend : dict of str to matplotlib.artist.Artist
+        Legend entries of the karyogram, which `intervals` adds to.
+
+    Examples
+    --------
+    >>> from karyogram_plot import Genome
+    >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("cnv")])
+    >>> type(kary.track("cnv")).__name__
+    'TrackPanels'
+    """
+
+    def __init__(
+        self, panels: dict[str, Axes], orientation: Orientation, legend: dict[str, Artist]
+    ):
+        self._panels = {chrom_key(name): (name, panel) for name, panel in panels.items()}
+        self._orientation = orientation
+        self._legend = legend
+
+    def scatter(
+        self,
+        data: object = None,
+        *,
+        chrom: object = "chrom",
+        pos: object = "pos",
+        value: object = "value",
+        **kwargs,
+    ) -> dict[str, PathCollection]:
+        """Draw one marker per row at its position and value.
+
+        A numeric ``c`` gets one color scale across every chromosome, unless
+        ``norm``, ``vmin`` or ``vmax`` sets it. Markers have no edge unless
+        ``linewidths`` sets one, because themes that ring markers in the
+        background color would hide small, dense points.
+
+        Parameters
+        ----------
+        data : DataFrame or dict, optional
+            Table with one row per point.
+        chrom : str or array-like, default "chrom"
+            Chromosome of each point.
+        pos : str or array-like, default "pos"
+            Position in bp.
+        value : str or array-like, default "value"
+            Value on the track's value axis.
+        **kwargs
+            Passed to `matplotlib.axes.Axes.scatter`.
+
+        Returns
+        -------
+        dict of str to matplotlib.collections.PathCollection
+            Markers keyed by chromosome name.
+
+        Examples
+        --------
+        >>> from karyogram_plot import Genome
+        >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("cnv")])
+        >>> import numpy as np
+        >>> bins = {"chrom": ["1", "2"], "mid": [5e5, 7e5], "log2": np.array([0.4, -1.2])}
+        >>> points = kary.track("cnv").scatter(bins, pos="mid", value="log2", c=bins["log2"])
+        >>> list(points)
+        ['chr1', 'chr2']
+        """
+        along, values = column(data, pos), column(data, value)
+        kwargs = {"linewidths": 0, **kwargs}
+        colors = np.asarray(kwargs.get("c", ()))
+        if (
+            colors.dtype.kind in "fiu"
+            and colors.size
+            and not {"norm", "vmin", "vmax"} & set(kwargs)
+        ):
+            kwargs |= {"vmin": np.nanmin(colors), "vmax": np.nanmax(colors)}
+        return {
+            name: panel.scatter(
+                *self._xy(along[rows], values[rows]), **_split_styles(kwargs, rows, len(along))
+            )
+            for name, panel, rows in self._groups(data, chrom)
+        }
+
+    def line(
+        self,
+        data: object = None,
+        *,
+        chrom: object = "chrom",
+        pos: object = "pos",
+        value: object = "value",
+        **kwargs,
+    ) -> dict[str, Line2D]:
+        """Draw a line through the rows of each chromosome, in position order.
+
+        Parameters
+        ----------
+        data : DataFrame or dict, optional
+            Table with one row per point.
+        chrom : str or array-like, default "chrom"
+            Chromosome of each point.
+        pos : str or array-like, default "pos"
+            Position in bp.
+        value : str or array-like, default "value"
+            Value on the track's value axis.
+        **kwargs
+            Passed to `matplotlib.axes.Axes.plot`.
+
+        Returns
+        -------
+        dict of str to matplotlib.lines.Line2D
+            Lines keyed by chromosome name.
+
+        Examples
+        --------
+        >>> from karyogram_plot import Genome
+        >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("gc")])
+        >>> gc = {"chrom": ["1", "1"], "pos": [2e6, 1e6], "value": [0.41, 0.38]}
+        >>> kary.track("gc").line(gc)["chr1"].get_ydata().tolist()
+        [1000000.0, 2000000.0]
+        """
+        along, values = column(data, pos), column(data, value)
+        lines = {}
+        for name, panel, rows in self._groups(data, chrom):
+            rows = rows[np.argsort(along[rows], kind="stable")]
+            (lines[name],) = panel.plot(*self._xy(along[rows], values[rows]), **kwargs)
+        return lines
+
+    def area(
+        self,
+        data: object = None,
+        *,
+        chrom: object = "chrom",
+        start: object = "start",
+        end: object = "end",
+        value: object = "value",
+        baseline: float = 0.0,
+        **kwargs,
+    ) -> dict[str, StepPatch]:
+        """Fill from a baseline to each bin's value, as steps.
+
+        Bins of one chromosome must not overlap. Gaps between them stay
+        empty.
+
+        Parameters
+        ----------
+        data : DataFrame or dict, optional
+            Table with one row per bin.
+        chrom : str or array-like, default "chrom"
+            Chromosome of each bin.
+        start, end : str or array-like, default "start" and "end"
+            Span of each bin in bp.
+        value : str or array-like, default "value"
+            Height of each bin on the track's value axis.
+        baseline : float, default 0
+            Value the fill starts from.
+        **kwargs
+            Passed to `matplotlib.axes.Axes.stairs`.
+
+        Returns
+        -------
+        dict of str to matplotlib.patches.StepPatch
+            Fills keyed by chromosome name.
+
+        Examples
+        --------
+        >>> from karyogram_plot import Genome
+        >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("genes")])
+        >>> density = {"chrom": ["1", "1"], "start": [0, 1e6], "end": [1e6, 2e6], "value": [3, 8]}
+        >>> kary.track("genes").area(density)["chr1"].get_data().edges.tolist()
+        [0.0, 1000000.0, 2000000.0]
+        """
+        starts, ends = column(data, start).astype(float), column(data, end).astype(float)
+        values = column(data, value).astype(float)
+        across = "horizontal" if self._orientation == "vertical" else "vertical"
+        areas = {}
+        for name, panel, rows in self._groups(data, chrom):
+            rows = rows[np.argsort(starts[rows], kind="stable")]
+            edges, heights = _steps(starts[rows], ends[rows], values[rows])
+            areas[name] = panel.stairs(
+                heights, edges, baseline=baseline, fill=True, orientation=across, **kwargs
+            )
+        return areas
+
+    def heatmap(
+        self,
+        data: object = None,
+        *,
+        chrom: object = "chrom",
+        start: object = "start",
+        end: object = "end",
+        value: object = "value",
+        cmap: str | Colormap | None = None,
+        norm: Normalize | None = None,
+        **kwargs,
+    ) -> ScalarMappable:
+        """Color each bin across the full track width by its value.
+
+        Parameters
+        ----------
+        data : DataFrame or dict, optional
+            Table with one row per bin.
+        chrom : str or array-like, default "chrom"
+            Chromosome of each bin.
+        start, end : str or array-like, default "start" and "end"
+            Span of each bin in bp.
+        value : str or array-like, default "value"
+            Number colored through `cmap` and `norm`.
+        cmap : str or matplotlib.colors.Colormap, optional
+            Colormap. By default, the theme's.
+        norm : matplotlib.colors.Normalize, optional
+            Scaling of `value`. By default, its minimum to its maximum.
+        **kwargs
+            Passed to `karyogram_plot.spans.Spans`.
+
+        Returns
+        -------
+        matplotlib.cm.ScalarMappable
+            The color scale, for a colorbar.
+
+        Examples
+        --------
+        >>> from karyogram_plot import Genome
+        >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("expr")])
+        >>> bins = {"chrom": ["1", "1"], "start": [0, 1e6], "end": [1e6, 2e6], "value": [3, 8]}
+        >>> kary.track("expr").heatmap(bins, cmap="magma").norm.vmax
+        8.0
+        """
+        starts, ends = column(data, start).astype(float), column(data, end).astype(float)
+        values = column(data, value).astype(float)
+        scale = _value_scale(values, cmap, norm)
+        for _, panel, rows in self._groups(data, chrom):
+            colors = scale.to_rgba(values[rows])
+            self._add_spans(panel, starts[rows], ends[rows], colors, 0.0, **kwargs)
+        return scale
+
+    def intervals(
+        self,
+        data: object = None,
+        *,
+        chrom: object = "chrom",
+        start: object = "start",
+        end: object = "end",
+        color: object = None,
+        palette: Mapping[object, ColorType] | None = None,
+        **kwargs,
+    ) -> dict[str, Spans]:
+        """Draw a box across the track width over each interval.
+
+        Intervals narrower than `MIN_PAINT_POINTS` widen at draw time, so
+        small features such as peaks stay visible.
+
+        Parameters
+        ----------
+        data : DataFrame or dict, optional
+            Table with one row per interval.
+        chrom : str or array-like, default "chrom"
+            Chromosome of each interval.
+        start, end : str or array-like, default "start" and "end"
+            Span of each interval in bp.
+        color : str or array-like, optional
+            Category of each interval. Categories get colors from `palette`
+            and appear in `Karyogram.legend`. By default, every interval
+            gets the first color of the theme's cycle.
+        palette : mapping, optional
+            Color of each category, in legend order. By default, the
+            theme's color cycle in order of first appearance.
+        **kwargs
+            Passed to `karyogram_plot.spans.Spans`.
+
+        Returns
+        -------
+        dict of str to karyogram_plot.spans.Spans
+            Boxes keyed by chromosome name.
+
+        Raises
+        ------
+        KeyError
+            If `palette` lacks a category.
+
+        Examples
+        --------
+        >>> from karyogram_plot import Genome
+        >>> kary = Karyogram(Genome.bundled("hg38"), tracks=[Track("peaks")])
+        >>> peaks = {"chrom": ["1", "2"], "start": [1e6, 3e6], "end": [1.0002e6, 3.0001e6]}
+        >>> list(kary.track("peaks").intervals(peaks))
+        ['chr1', 'chr2']
+        """
+        starts, ends = column(data, start).astype(float), column(data, end).astype(float)
+        categories = None if color is None else column(data, color)
+        codes, swatches = _category_colors(categories, len(starts), palette, self._legend)
+        return {
+            name: self._add_spans(
+                panel, starts[rows], ends[rows], swatches[codes[rows]], MIN_PAINT_POINTS, **kwargs
+            )
+            for name, panel, rows in self._groups(data, chrom)
+        }
+
+    def _groups(self, data: object, chrom: object) -> Iterator[tuple[str, Axes, np.ndarray]]:
+        """Yield each drawn chromosome with its panel and rows, in drawing order."""
+        rows = rows_by_chrom(column(data, chrom))
+        for key, (name, panel) in self._panels.items():
+            if key in rows:
+                yield name, panel, rows[key]
+
+    def _xy(self, along: np.ndarray, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        return (values, along) if self._orientation == "vertical" else (along, values)
+
+    def _add_spans(
+        self,
+        panel: Axes,
+        starts: np.ndarray,
+        ends: np.ndarray,
+        colors: np.ndarray,
+        min_points: float,
+        **kwargs,
+    ) -> Spans:
+        """Add spans that fill the track width, with a thin edge to hide seams."""
+        transform = (
+            panel.get_yaxis_transform()
+            if self._orientation == "vertical"
+            else panel.get_xaxis_transform()
+        )
+        kwargs = {"facecolors": colors, "edgecolors": colors, "linewidths": 0.25, **kwargs}
+        spans = Spans(
+            starts,
+            ends,
+            (0.0, 1.0),
+            orientation=self._orientation,
+            min_points=min_points,
+            transform=transform,
+            **kwargs,
+        )
+        panel.add_collection(spans, autolim=False)
+        return spans
+
+
+def _split_styles(styles: dict, rows: np.ndarray, length: int) -> dict:
+    """Pick out the rows of style arrays that hold one value per row."""
+    return {
+        key: np.asarray(style)[rows]
+        if hasattr(style, "__array__") and np.ndim(style) >= 1 and len(style) == length
+        else style
+        for key, style in styles.items()
+    }
+
+
+def _steps(
+    starts: np.ndarray, ends: np.ndarray, values: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return step edges and heights for sorted bins, with NaN steps over gaps."""
+    gap = np.append(False, starts[1:] > ends[:-1])
+    slot = np.arange(len(starts)) + np.cumsum(gap)
+    heights = np.full(len(starts) + gap.sum(), np.nan)
+    heights[slot] = values
+    edges = np.empty(len(heights) + 1)
+    edges[0] = starts[0]
+    edges[slot + 1] = ends
+    edges[slot[gap]] = starts[gap]
+    return edges, heights
+
+
+def _value_scale(values: np.ndarray, cmap: object, norm: Normalize | None) -> ScalarMappable:
+    """Return a color scale fit to the values unless `norm` sets its limits."""
+    scale = ScalarMappable(norm, cmap)
+    scale.set_array(values)
+    scale.autoscale_None()
+    return scale
+
+
+def _category_colors(
+    values: np.ndarray | None, rows: int, palette: Mapping | None, legend: dict[str, Artist]
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return each row's category index and the category colors.
+
+    Categories join `legend`. Without categories, every row gets the first
+    color of the theme's cycle and the legend stays as it is.
+    """
+    if values is None:
+        return np.zeros(rows, dtype=int), to_rgba_array(["C0"])
+    labels, codes = _categories(values, palette)
+    cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    swatches = to_rgba_array(
+        [cycle[i % len(cycle)] for i in range(len(labels))]
+        if palette is None
+        else [palette[x] for x in labels.tolist()]
+    )
+    for label, swatch in zip(labels, swatches, strict=True):
+        legend[str(label)] = Patch(facecolor=swatch, edgecolor="none")
+    return codes, swatches
 
 
 def _categories(values: np.ndarray, palette: Mapping | None) -> tuple[np.ndarray, np.ndarray]:
