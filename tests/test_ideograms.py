@@ -245,3 +245,52 @@ def test_chromosome_axis_hides_tick_labels_that_would_overlap():
     boxes = [t.get_window_extent(renderer) for t in shown]
     assert 12 < len(shown) < len(HG38)
     assert all(a.x1 <= b.x0 for a, b in zip(boxes, boxes[1:], strict=False))
+
+
+def painted_extents(spans):
+    """Along-axis extent of each painted span in data coordinates."""
+    return [ends(path.vertices[:, 0]) for path in spans.get_paths()]
+
+
+def test_paint_fills_spans_in_bp_clipped_to_the_outline():
+    fig, ax = plt.subplots()
+    ideo = kp.Ideogram(HG38["chr1"], ax, offset=1000)
+    spans = ideo.paint([0, 50e6], [40e6, 120e6], ["C1", "C2"])
+    fig.draw_without_rendering()
+    assert sorted(painted_extents(spans)) == [(1000, 1000 + 40e6), (1000 + 50e6, 1000 + 120e6)]
+    assert spans.get_clip_path() is not None
+    assert spans.get_clip_box() is None
+    assert ideo.bands.get_zorder() < spans.get_zorder() < ideo.get_zorder()
+
+
+def test_paint_sits_below_a_telocentric_knob():
+    fig, ax = plt.subplots()
+    ideo = kp.Ideogram(kp.Genome.bundled("mm39")["chr1"], ax)
+    spans = ideo.paint([0], [1e8], "C1")
+    assert spans.get_zorder() < knob(ideo).get_zorder()
+
+
+def test_small_painted_spans_keep_a_minimum_width_and_draw_on_top():
+    ideo = kp.ideogram(HG38["chr1"])
+    spans = ideo.paint([0, 100e6], [200e6, 100e6 + 1000], ["C1", "C2"])
+    fig = ideo.figure
+    for size in [(6.5, 0.75), (13, 0.75)]:
+        fig.set_size_inches(size)
+        fig.draw_without_rendering()
+        small = spans.get_paths()[-1]
+        pixels = ax_pixels(ideo, ends(small.vertices[:, 0]))
+        assert np.diff(pixels)[0] == pytest.approx(ideograms.MIN_PAINT_POINTS * fig.dpi / 72)
+        assert np.mean(ends(small.vertices[:, 0])) == pytest.approx(100e6 + 500)
+    np.testing.assert_allclose(spans.get_facecolors()[-1], to_rgba("C2"))
+
+
+def ax_pixels(ideo, xs):
+    return ideo.axes.transData.transform([(x, 0) for x in xs])[:, 0]
+
+
+def test_paint_takes_one_color_or_one_per_span():
+    fig, ax = plt.subplots()
+    ideo = kp.Ideogram(HG38["chr1"], ax)
+    assert len(ideo.paint([0, 5e7], [1e7, 6e7], "C1").get_facecolors()) == 1
+    with pytest.raises(ValueError, match="colors"):
+        ideo.paint([0, 5e7], [1e7, 6e7], ["C1", "C2", "C3"])
