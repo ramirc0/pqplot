@@ -85,6 +85,18 @@ kary.panel("chr1", track="cnv").set_ylim(-2, 2)  # horizontal: values on y; shar
 - `heatmap` returns the `ScalarMappable` for `kary.colorbar`. It takes `cmap`
   and `norm` like `paint`.
 
+To title the value axis, label the panel that shows it. In a vertical
+karyogram that is the first chromosome's track panel. Move the title to the
+top, or it collides with the chromosome name below:
+
+```python
+vertical = pqp.Karyogram(hg38, groups=2, tracks=[pqp.Track("genes", side="before")])
+vertical.track("genes").area(bins, value="per_mb", linewidth=0)
+axis_panel = vertical.panel("chr1", track="genes")
+axis_panel.set_xlabel("genes/Mb", fontsize="x-small")
+axis_panel.xaxis.set_label_position("top")
+```
+
 ## Marks and labels
 
 ```python
@@ -111,6 +123,9 @@ kary.legend(title="Trait")
   chromosome. When more labels than fit, the last rows are hidden with a
   `UserWarning`. Sort the table by importance first, and lower `fontsize`
   (default `"x-small"`) or label fewer rows.
+- Call `label` once per track with every row. Separate calls, such as one
+  per category, place their labels independently, so they can overlap. Show
+  the category through `mark(color=...)` instead.
 - Labels do not count in the layout. If they run into the next chromosome or
   off the figure, raise the track `size`.
 

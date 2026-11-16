@@ -1,0 +1,23 @@
+{
+  "skill_name": "pqplot",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I ran CNVkit on a tumor sample (hg38) and have the segments in segments.tsv (columns: chromosome, start, end, log2, probes). Make a karyogram with gains (log2 > 0.3) painted red and losses (log2 < -0.3) painted blue on the chromosomes, two rows, with a legend. Save it as cnv_karyogram.png.",
+      "expected_output": "A two-group hg38 karyogram with gain and loss segments painted on the bodies, a legend, and a note about the chrUn and chrM rows that cannot be drawn.",
+      "files": ["inputs/segments.tsv"]
+    },
+    {
+      "id": 2,
+      "prompt": "Manhattan plot please. gwas.tsv has CHR, BP, P from plink on hg19. CHR is numeric 1-23 (23 is X). I want a strip of the chromosome ideograms above the plot lined up with it, a genome-wide significance line, and chromosome names on the x axis. Save manhattan.png.",
+      "expected_output": "A Manhattan plot on concatenated hg19 coordinates with chromosome 23 mapped to X so its hits show, an aligned genome strip above, a 5e-8 line and chromosome tick labels.",
+      "files": ["inputs/gwas.tsv"]
+    },
+    {
+      "id": 3,
+      "prompt": "Make a vertical hg38 karyotype figure in two rows for a talk. density.tsv has gene counts in 1 Mb bins (chrom, start, end, count) and genes.tsv has cancer genes (chrom, start, symbol, class where class is oncogene or tsg). Show density as a filled area on one side of each chromosome, and mark and label the genes on the other side, colored by class with a legend. Save karyotype_genes.png.",
+      "expected_output": "A two-group vertical karyogram with a density area track on one side and a mark plus label track on the other, colored by class, with readable labels and a legend.",
+      "files": ["inputs/density.tsv", "inputs/genes.tsv"]
+    }
+  ]
+}
