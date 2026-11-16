@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import polars as pl
 import pytest
@@ -45,7 +47,7 @@ def test_scatter_splits_per_row_styles_and_shares_one_color_scale():
     )
     assert points["chr1"].get_array().tolist() == [-1.0, 2.0]
     assert points["chr1"].norm.vmin == points["chr2"].norm.vmin == -1.0
-    assert points["chr1"].norm.vmax == 9.0
+    assert points["chr1"].norm.vmax == points["chr2"].norm.vmax == 2.0
     assert points["chr2"].get_sizes().tolist() == [4]
 
 
@@ -164,3 +166,81 @@ def test_value_axis_tick_labels_do_not_overlap_in_a_narrow_track():
     ]
     assert len(labels) == 2
     assert not labels[0].overlaps(labels[1])
+
+
+def test_labels_with_missing_positions_leave_the_others_in_place():
+    kary = pqp.Karyogram(HG38, chroms=["1"], tracks=[pqp.Track("g", "after", 5)])
+    genes = {"chrom": ["1"] * 3, "pos": [10e6, np.nan, 90e6], "text": ["a", "b", "c"]}
+    lanes = kary.track("g").label(genes)
+    kary.figure.draw_without_rendering()
+    assert [t.get_text() for t in lanes["chr1"].texts] == ["a", "c"]
+    assert all(np.isfinite(t.get_position()).all() for t in lanes["chr1"].texts)
+
+
+@pytest.mark.parametrize(
+    "bins",
+    [
+        {"start": [0, 1e6], "end": [2e6, 3e6]},
+        {"start": [0, 1e6], "end": [5e6, 2e6]},
+        {"start": [2e6], "end": [1e6]},
+    ],
+)
+def test_area_rejects_overlapping_or_reversed_bins(bins):
+    rows = {"chrom": ["1"] * len(bins["start"]), "value": [1.0] * len(bins["start"]), **bins}
+    with pytest.raises(ValueError, match="chr1"):
+        karyogram().track("genes").area(rows)
+
+
+def test_area_and_line_skip_rows_with_missing_coordinates():
+    kary = karyogram()
+    rows = {
+        "chrom": ["1"] * 3,
+        "start": [0, np.nan, 2e6],
+        "end": [1e6, 2e6, 3e6],
+        "pos": [1, None, 3],
+        "value": [1.0, 2.0, None],
+    }
+    assert kary.track("genes").area(rows)["chr1"].get_data().edges.tolist() == [0, 1e6, 2e6, 3e6]
+    assert kary.track("cnv").line(rows)["chr1"].get_ydata().tolist() == [1, 3]
+
+
+@pytest.mark.parametrize("limit", ["vmin", "vmax"])
+def test_scatter_shares_one_color_scale_when_one_limit_is_given(limit):
+    kary = pqp.Karyogram(HG38, chroms=["1", "2"], tracks=[pqp.Track("cnv")])
+    points = {"chrom": ["1", "2"], "pos": [1e6, 1e6], "value": [1.0, 100.0]}
+    drawn = kary.track("cnv").scatter(
+        points, c=np.array(points["value"]), **{limit: 0.5 if limit == "vmin" else 200}
+    )
+    assert {c.norm.vmin for c in drawn.values()} | {c.norm.vmax for c in drawn.values()} <= {
+        0.5,
+        1.0,
+        100.0,
+        200.0,
+    }
+    assert len({(c.norm.vmin, c.norm.vmax) for c in drawn.values()}) == 1
+
+
+def test_scatter_splits_plain_lists_of_colors_and_sizes():
+    kary = karyogram()
+    drawn = kary.track("cnv").scatter(POINTS, value="log2", c=[1.0, 2.0, 3.0, 4.0], s=[1, 2, 3, 4])
+    assert drawn["chr1"].get_sizes().tolist() == [2, 3]
+
+
+def test_scatter_with_rgb_colors_does_not_warn():
+    kary = karyogram()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        kary.track("cnv").scatter(POINTS, value="log2", c=np.tile([1.0, 0, 0], (4, 1)))
+        kary.figure.draw_without_rendering()
+
+
+def test_heatmap_scale_spans_only_the_drawn_rows():
+    kary = karyogram()
+    rows = {**BINS, "chrom": BINS["chrom"][:3] + ["chr9"], "n": [1.0, 2.0, 3.0, 1000.0]}
+    assert kary.track("genes").heatmap(rows, value="n").norm.vmax == 3
+
+
+def test_marks_skip_missing_categories():
+    kary = karyogram()
+    hits = {"chrom": ["1", "1"], "pos": [1e6, 2e6], "trait": ["LDL", None]}
+    assert len(kary.track("cnv").mark(hits, color="trait")["chr1"].get_offsets()) == 1

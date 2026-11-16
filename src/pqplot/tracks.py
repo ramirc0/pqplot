@@ -20,7 +20,7 @@ from matplotlib.transforms import IdentityTransform, ScaledTranslation, Transfor
 from matplotlib.typing import ColorType
 
 from pqplot.colors import category_colors, value_scale
-from pqplot.columns import column, rows_by_chrom
+from pqplot.columns import columns, numbers, present, rows_by_chrom
 from pqplot.genome import chrom_key
 from pqplot.ideograms import MIN_PAINT_POINTS
 from pqplot.labels import capacity, spread
@@ -41,9 +41,13 @@ class TrackPanels:
     axis, so one call scales them all.
 
     Each column argument is a column name in `data` or the values
-    themselves. Extra keyword arguments go to the matplotlib call. Arrays
-    and Series among them with one value per row, such as ``c`` or ``s``,
-    are split by chromosome too.
+    themselves. Columns must have one length. Rows with a missing position,
+    span, category or text are skipped, and so are rows on chromosomes that
+    are not drawn. Only drawn rows enter color scales and the legend.
+
+    Extra keyword arguments go to the matplotlib call. Arrays, Series and
+    lists among them with one value per row, such as ``c``, ``s`` or
+    ``alpha``, are split by chromosome too.
 
     Parameters
     ----------
@@ -131,8 +135,12 @@ class TrackPanels:
         >>> list(kary.track("hits").mark(gwas, color="trait"))
         ['chr1', 'chr2']
         """
-        along = column(data, pos).astype(float)
-        categories = None if color is None else column(data, color)
+        cols = columns(data, chrom=chrom, pos=pos, color=color)
+        along = numbers(cols["pos"])
+        keep = np.isfinite(along)
+        if color is not None:
+            keep &= present(cols["color"])
+        groups = list(self._groups(cols["chrom"], keep))
         marker = {(1, 0): "<", (-1, 0): ">", (0, -1): "^", (0, 1): "v"}[self._away()]
 
         def handle(swatch: np.ndarray) -> Artist:
@@ -146,12 +154,14 @@ class TrackPanels:
                 markeredgewidth=0,
             )
 
-        codes, swatches = category_colors(categories, len(along), palette, self._legend, handle)
+        codes, swatches = category_colors(
+            cols.get("color"), len(along), _shown(groups), palette, self._legend, handle
+        )
         inset = np.array(self._away()) * np.sqrt(size) / 2 / 72
         kwargs = {"linewidths": 0, "clip_on": False, "zorder": 3, **kwargs}
         self._hide_values()
         marks = {}
-        for name, panel, rows in self._groups(data, chrom):
+        for name, panel, rows in groups:
             transform = self._across_axes(panel) + ScaledTranslation(
                 *inset, panel.figure.dpi_scale_trans
             )
@@ -161,7 +171,7 @@ class TrackPanels:
                 marker=marker,
                 c=swatches[codes[rows]],
                 transform=transform,
-                **kwargs,
+                **_split_styles(kwargs, rows, len(along)),
             )
         return marks
 
@@ -213,8 +223,11 @@ class TrackPanels:
         >>> [t.get_text() for t in lanes["chr1"].texts]
         ['PCSK9']
         """
-        along = column(data, pos).astype(float)
-        texts = column(data, text).astype(str)
+        cols = columns(data, chrom=chrom, pos=pos, text=text)
+        along = numbers(cols["pos"])
+        texts = cols["text"]
+        keep = np.isfinite(along) & present(texts)
+        texts = texts.astype(str)
         self._hide_values()
         return {
             name: LabelLane(
@@ -226,7 +239,7 @@ class TrackPanels:
                 fontsize=fontsize,
                 **kwargs,
             )
-            for name, panel, rows in self._groups(data, chrom)
+            for name, panel, rows in self._groups(cols["chrom"], keep)
         }
 
     def scatter(
@@ -240,8 +253,9 @@ class TrackPanels:
     ) -> dict[str, PathCollection]:
         """Draw one marker per row at its position and value.
 
-        A numeric ``c`` gets one color scale across every chromosome, unless
-        ``norm``, ``vmin`` or ``vmax`` sets it. Markers have no edge unless
+        A numeric ``c`` gets one color scale across every chromosome, fit to
+        the drawn rows. ``vmin`` and ``vmax`` fix either end, and ``norm``
+        replaces the scale. Markers have no edge unless
         ``linewidths`` sets one, because themes that ring markers in the
         background color would hide small, dense points.
 
@@ -273,20 +287,27 @@ class TrackPanels:
         >>> list(points)
         ['chr1', 'chr2']
         """
-        along, values = column(data, pos), column(data, value)
+        cols = columns(data, chrom=chrom, pos=pos, value=value)
+        along, values = numbers(cols["pos"]), numbers(cols["value"])
+        groups = list(self._groups(cols["chrom"], np.isfinite(along)))
         kwargs = {"linewidths": 0, **kwargs}
         colors = np.asarray(kwargs.get("c", ()))
         if (
-            colors.dtype.kind in "fiu"
-            and colors.size
-            and not {"norm", "vmin", "vmax"} & set(kwargs)
+            colors.ndim == 1
+            and colors.dtype.kind in "fiu"
+            and len(colors) == len(along)
+            and "norm" not in kwargs
         ):
-            kwargs |= {"vmin": np.nanmin(colors), "vmax": np.nanmax(colors)}
+            shown = colors[_shown(groups)].astype(float)
+            finite = shown[np.isfinite(shown)]
+            if finite.size:
+                kwargs.setdefault("vmin", finite.min())
+                kwargs.setdefault("vmax", finite.max())
         return {
             name: panel.scatter(
                 *self._xy(along[rows], values[rows]), **_split_styles(kwargs, rows, len(along))
             )
-            for name, panel, rows in self._groups(data, chrom)
+            for name, panel, rows in groups
         }
 
     def line(
@@ -326,11 +347,14 @@ class TrackPanels:
         >>> kary.track("gc").line(gc)["chr1"].get_ydata().tolist()
         [1000000.0, 2000000.0]
         """
-        along, values = column(data, pos), column(data, value)
+        cols = columns(data, chrom=chrom, pos=pos, value=value)
+        along, values = numbers(cols["pos"]), numbers(cols["value"])
         lines = {}
-        for name, panel, rows in self._groups(data, chrom):
+        for name, panel, rows in self._groups(cols["chrom"], np.isfinite(along)):
             rows = rows[np.argsort(along[rows], kind="stable")]
-            (lines[name],) = panel.plot(*self._xy(along[rows], values[rows]), **kwargs)
+            (lines[name],) = panel.plot(
+                *self._xy(along[rows], values[rows]), **_split_styles(kwargs, rows, len(along))
+            )
         return lines
 
     def area(
@@ -347,7 +371,7 @@ class TrackPanels:
         """Fill from a baseline to each bin's value, as steps.
 
         Bins of one chromosome must not overlap. Gaps between them stay
-        empty.
+        empty, and so do bins with a missing value.
 
         Parameters
         ----------
@@ -369,6 +393,11 @@ class TrackPanels:
         dict of str to matplotlib.patches.StepPatch
             Fills keyed by chromosome name.
 
+        Raises
+        ------
+        ValueError
+            If bins of one chromosome overlap or end before they start.
+
         Examples
         --------
         >>> from pqplot import Genome, Karyogram, Track
@@ -377,12 +406,15 @@ class TrackPanels:
         >>> kary.track("genes").area(density)["chr1"].get_data().edges.tolist()
         [0.0, 1000000.0, 2000000.0]
         """
-        starts, ends = column(data, start).astype(float), column(data, end).astype(float)
-        values = column(data, value).astype(float)
+        cols = columns(data, chrom=chrom, start=start, end=end, value=value)
+        starts, ends, values = (numbers(cols[k]) for k in ("start", "end", "value"))
+        keep = np.isfinite(starts) & np.isfinite(ends)
         across = "horizontal" if self._orientation == "vertical" else "vertical"
         areas = {}
-        for name, panel, rows in self._groups(data, chrom):
+        for name, panel, rows in self._groups(cols["chrom"], keep):
             rows = rows[np.argsort(starts[rows], kind="stable")]
+            if np.any(ends[rows] < starts[rows]) or np.any(starts[rows][1:] < ends[rows][:-1]):
+                raise ValueError(f"area bins on {name} overlap or end before they start")
             edges, heights = _steps(starts[rows], ends[rows], values[rows])
             areas[name] = panel.stairs(
                 heights, edges, baseline=baseline, fill=True, orientation=across, **kwargs
@@ -435,13 +467,21 @@ class TrackPanels:
         >>> kary.track("expr").heatmap(bins, cmap="magma").norm.vmax
         8.0
         """
-        starts, ends = column(data, start).astype(float), column(data, end).astype(float)
-        values = column(data, value).astype(float)
-        scale = value_scale(values, cmap, norm)
+        cols = columns(data, chrom=chrom, start=start, end=end, value=value)
+        starts, ends, values = (numbers(cols[k]) for k in ("start", "end", "value"))
+        groups = list(self._groups(cols["chrom"], np.isfinite(starts) & np.isfinite(ends)))
+        scale = value_scale(values[_shown(groups)], cmap, norm)
         self._hide_values()
-        for _, panel, rows in self._groups(data, chrom):
+        for _, panel, rows in groups:
             colors = scale.to_rgba(values[rows])
-            self._add_spans(panel, starts[rows], ends[rows], colors, 0.0, **kwargs)
+            self._add_spans(
+                panel,
+                starts[rows],
+                ends[rows],
+                colors,
+                0.0,
+                **_split_styles(kwargs, rows, len(values)),
+            )
         return scale
 
     def intervals(
@@ -497,20 +537,33 @@ class TrackPanels:
         >>> list(kary.track("peaks").intervals(peaks))
         ['chr1', 'chr2']
         """
-        starts, ends = column(data, start).astype(float), column(data, end).astype(float)
-        categories = None if color is None else column(data, color)
-        codes, swatches = category_colors(categories, len(starts), palette, self._legend)
+        cols = columns(data, chrom=chrom, start=start, end=end, color=color)
+        starts, ends = numbers(cols["start"]), numbers(cols["end"])
+        keep = np.isfinite(starts) & np.isfinite(ends)
+        if color is not None:
+            keep &= present(cols["color"])
+        groups = list(self._groups(cols["chrom"], keep))
+        codes, swatches = category_colors(
+            cols.get("color"), len(starts), _shown(groups), palette, self._legend
+        )
         self._hide_values()
         return {
             name: self._add_spans(
-                panel, starts[rows], ends[rows], swatches[codes[rows]], MIN_PAINT_POINTS, **kwargs
+                panel,
+                starts[rows],
+                ends[rows],
+                swatches[codes[rows]],
+                MIN_PAINT_POINTS,
+                **_split_styles(kwargs, rows, len(starts)),
             )
-            for name, panel, rows in self._groups(data, chrom)
+            for name, panel, rows in groups
         }
 
-    def _groups(self, data: object, chrom: object) -> Iterator[tuple[str, Axes, np.ndarray]]:
-        """Yield each drawn chromosome with its panel and rows, in drawing order."""
-        rows = rows_by_chrom(column(data, chrom))
+    def _groups(
+        self, chroms: np.ndarray, keep: np.ndarray
+    ) -> Iterator[tuple[str, Axes, np.ndarray]]:
+        """Yield each drawn chromosome with its panel and kept rows, in drawing order."""
+        rows = rows_by_chrom(chroms, keep)
         for key, (name, panel) in self._panels.items():
             if key in rows:
                 yield name, panel, rows[key]
@@ -566,13 +619,23 @@ class TrackPanels:
 
 
 def _split_styles(styles: dict, rows: np.ndarray, length: int) -> dict:
-    """Pick out the rows of style arrays that hold one value per row."""
+    """Pick out the rows of style arrays and lists that hold one value per row.
+
+    Tuples stay whole, because they are single colors.
+    """
     return {
         key: np.asarray(style)[rows]
-        if hasattr(style, "__array__") and np.ndim(style) >= 1 and len(style) == length
+        if (isinstance(style, list) or hasattr(style, "__array__"))
+        and np.ndim(style) >= 1
+        and len(style) == length
         else style
         for key, style in styles.items()
     }
+
+
+def _shown(groups: list[tuple[str, Axes, np.ndarray]]) -> np.ndarray:
+    """Return the rows drawn across every group."""
+    return np.concatenate([np.empty(0, dtype=int), *(rows for _, _, rows in groups)])
 
 
 def _steps(

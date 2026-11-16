@@ -29,6 +29,12 @@ document.
 - `Karyogram.legend` raises `ValueError` when no layer drew categories.
   `Karyogram.panels` raises `KeyError` for an unknown track, as `panel`
   does.
+- Data layers check that their columns have one length and raise
+  `ValueError` when they differ. They used to truncate or fail with an
+  `IndexError`. A missing column raises `KeyError` naming it.
+- `TrackPanels.area` raises `ValueError` for bins that overlap or end before
+  they start, which it used to draw as wrong steps. `Ideogram.paint` and
+  `Karyogram.paint` raise for spans that end before they start.
 
 ### Fixed
 
@@ -56,6 +62,20 @@ document.
   Axes in another figure.
 - `Ideogram.paint` takes scalars and rejects reversed spans or starts and
   ends of different lengths. `Ideogram` takes `clip_on=`.
+- Rows with a missing start, end, position, category, copy or text are
+  skipped in every layer. A null start or end used to erase neighboring
+  spans in `paint`, a NaN label position moved every other label, and a
+  null category crashed.
+- Legends and color scales count only the rows that are drawn. Rows on
+  chromosomes left out of the karyogram no longer add legend entries or
+  stretch a colorbar.
+- A category keeps one color across `paint`, `mark` and `intervals` calls.
+  The same label used to get a new color in each call.
+- `scatter` keeps one color scale across chromosomes when only `vmin` or
+  `vmax` is given, and no longer warns for RGB colors. String positions
+  become numbers in `scatter` and `line`, as in the other layers.
+- Lists with one value per row, such as `alpha=[...]`, are split by
+  chromosome like arrays, in every layer.
 
 ## [0.1.0] - 2026-11-15
 

@@ -21,7 +21,7 @@ from matplotlib.typing import ColorType
 
 from pqplot import layout
 from pqplot.colors import category_colors, value_scale
-from pqplot.columns import column, rows_by_chrom
+from pqplot.columns import columns, numbers, present, rows_by_chrom
 from pqplot.genome import Chromosome, Genome, chrom_key
 from pqplot.ideograms import Ideogram
 from pqplot.panels import Orientation, add_panel
@@ -365,7 +365,9 @@ class Karyogram:
 
         Touching spans of one category merge into one. Small spans keep a
         minimum width in points and draw over larger ones. Rows on
-        chromosomes that are not drawn are skipped.
+        chromosomes that are not drawn are skipped, and so are rows with a
+        missing start, end, category or copy. Only drawn rows enter the
+        legend and the value scale. A category keeps its color across calls.
 
         Each column argument is a column name in `data` or the values
         themselves.
@@ -405,9 +407,10 @@ class Karyogram:
         ------
         ValueError
             If both `color` and `value` are given, only one of `start` and
-            `end` is given, or `copy` has more levels than drawn copies.
+            `end` is given, columns differ in length, a span ends before it
+            starts, or `copy` has more levels than drawn copies.
         KeyError
-            If `palette` lacks a category.
+            If a column is missing or `palette` lacks a category.
 
         Examples
         --------
@@ -425,30 +428,43 @@ class Karyogram:
             raise ValueError("pass color or value, not both")
         if (start is None) != (end is None):
             raise ValueError("pass start and end together, or neither")
-        chroms = column(data, chrom)
+        cols = columns(data, chrom=chrom, start=start, end=end, color=color, value=value, copy=copy)
+        rows = len(cols["chrom"])
+        keep = np.ones(rows, dtype=bool)
+        if start is not None:
+            starts, ends = numbers(cols["start"]), numbers(cols["end"])
+            keep &= np.isfinite(starts) & np.isfinite(ends)
+        for name in ("color", "copy"):
+            if name in cols:
+                keep &= present(cols[name])
         copy_index = None
         if copy is not None:
-            levels, copy_index = np.unique(column(data, copy), return_inverse=True)
+            levels, inverse = np.unique(cols["copy"][keep], return_inverse=True)
             copies = len(next(iter(self._ideograms.values())))
             if len(levels) > copies:
                 raise ValueError(f"copy has {len(levels)} levels for {copies} copies")
+            copy_index = np.full(rows, -1)
+            copy_index[keep] = inverse
+        groups = {
+            key: group
+            for key, group in rows_by_chrom(cols["chrom"], keep).items()
+            if key in self._ideograms
+        }
+        shown = np.concatenate([np.empty(0, dtype=int), *groups.values()])
         mappable = None
         if value is not None:
-            values = column(data, value).astype(float)
-            mappable = value_scale(values, cmap, norm)
+            values = numbers(cols["value"])
+            mappable = value_scale(values[shown], cmap, norm)
             # Each row is its own category, so no spans merge.
-            codes, swatches = np.arange(len(values)), mappable.to_rgba(values)
+            codes, swatches = np.arange(rows), mappable.to_rgba(values)
         else:
-            categories = None if color is None else column(data, color)
-            codes, swatches = category_colors(categories, len(chroms), palette, self._legend)
-        starts = None if start is None else column(data, start).astype(float)
-        ends = None if end is None else column(data, end).astype(float)
-        for key, rows in rows_by_chrom(chroms).items():
-            for k, ideo in enumerate(self._ideograms.get(key, [])):
-                mine = rows if copy_index is None else rows[copy_index[rows] == k]
+            codes, swatches = category_colors(cols.get("color"), rows, shown, palette, self._legend)
+        for key, group in groups.items():
+            for k, ideo in enumerate(self._ideograms[key]):
+                mine = group if copy_index is None else group[copy_index[group] == k]
                 if len(mine) == 0:
                     continue
-                if starts is None:
+                if start is None:
                     s0, s1 = np.zeros(len(mine)), np.full(len(mine), ideo.chromosome.length)
                 else:
                     s0, s1 = starts[mine], ends[mine]

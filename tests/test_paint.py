@@ -204,3 +204,58 @@ def test_colorbar_in_a_user_figure_keeps_its_size_and_stays_inside():
     assert bar.ax.get_window_extent().height * 72 / fig.dpi == pytest.approx(
         pqp.karyogram.COLORBAR_POINTS[1]
     )
+
+
+def test_paint_skips_spans_with_missing_coordinates_and_keeps_the_rest():
+    kary = pqp.Karyogram(HG38, chroms=["1"])
+    rows = pl.DataFrame(
+        {"chrom": ["1"] * 3, "start": [0.0, 5e6, 20e6], "end": [10e6, None, 30e6], "s": ["a"] * 3}
+    )
+    kary.paint(rows, start="start", end="end", color="s")
+    assert [s[:2] for s in spans(fills(kary, "1")[0])] == [(0, 10e6), (20e6, 30e6)]
+
+
+def test_paint_skips_rows_with_a_missing_category_or_copy():
+    kary = pqp.Karyogram(HG38, chroms=["1"], copies=2)
+    rows = {"chrom": ["1"] * 3, "s": ["a", None, "b"], "hap": [1, 2, None]}
+    kary.paint(rows, color="s", copy="hap")
+    assert [t.get_text() for t in kary.legend().get_texts()] == ["a"]
+
+
+def test_one_category_keeps_its_color_across_paint_calls():
+    kary = pqp.Karyogram(HG38, chroms=["1", "2"])
+    kary.paint({"chrom": ["1"], "s": ["a"]}, color="s")
+    kary.paint(
+        {"chrom": ["2", "2"], "start": [0, 5e7], "end": [1e7, 6e7], "s": ["b", "a"]},
+        start="start",
+        end="end",
+        color="s",
+    )
+    colors = {s[:2]: s[2] for s in spans(fills(kary, "2")[0])}
+    assert colors[(5e7, 6e7)] == to_rgba("C0")
+    assert colors[(0, 1e7)] == to_rgba("C1")
+
+
+def test_legend_lists_only_categories_that_were_drawn():
+    kary = pqp.Karyogram(HG38, chroms=["1"])
+    kary.paint({"chrom": ["1", "chrM"], "s": ["shown", "ghost"]}, color="s")
+    assert [t.get_text() for t in kary.legend().get_texts()] == ["shown"]
+
+
+def test_value_scale_spans_only_the_drawn_rows():
+    kary = pqp.Karyogram(HG38, chroms=["1"])
+    bins = {"chrom": ["1", "2"], "start": [0, 0], "end": [1e6, 1e6], "n": [1.0, 1000.0]}
+    assert kary.paint(bins, start="start", end="end", value="n").norm.vmax == 1
+
+
+@pytest.mark.parametrize("column", ["start", "s"])
+def test_paint_rejects_columns_of_different_lengths(column):
+    rows = {"chrom": ["1", "1"], "start": [0, 5e6], "end": [1e6, 6e6], "s": ["a", "b"]}
+    rows[column] = rows[column][:1]
+    with pytest.raises(ValueError, match="length"):
+        pqp.Karyogram(HG38, chroms=["1"]).paint(rows, start="start", end="end", color="s")
+
+
+def test_paint_names_a_missing_column():
+    with pytest.raises(KeyError, match="'state'"):
+        pqp.Karyogram(HG38, chroms=["1"]).paint({"chrom": ["1"]}, color="state")
