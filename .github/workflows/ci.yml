@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+      # setup-uv publishes no major tags since v8, only immutable release tags.
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync --locked
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run pytest
+      # The editable install reads files from src/, so only the wheel shows missing package data.
+      - run: uv build --wheel
+      - run: |
+          files=$(unzip -Z1 dist/*.whl)
+          for f in hg19/cytoBand.txt.gz hg38/cytoBand.txt.gz hs1/chm13v2.0_cytobands_allchrs.bed \
+                   mm10/cytoBand.txt.gz mm39/cytoBand.txt.gz; do
+            grep -qx "pqplot/data/$f" <<< "$files" || { echo "wheel lacks $f"; exit 1; }
+          done
+
+  lowest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.12"
+      - run: uv run --resolution lowest-direct pytest -m "not images"
