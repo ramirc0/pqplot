@@ -132,3 +132,35 @@ def test_value_axis_labels_clear_the_chromosome_names(orientation):
     ]
     assert ticks
     assert not [(t, n) for t in ticks for n in names if t.overlaps(n)]
+
+
+def visible_ticks(axis):
+    low, high = sorted(axis.get_view_interval())
+    return [t for t in axis.get_majorticklocs() if low <= t <= high]
+
+
+def test_value_axis_ticks_only_the_outermost_round_values():
+    kary = karyogram()
+    kary.track("cnv").scatter(POINTS, pos="pos", value="log2")
+    panel = kary.panel("1", "cnv")
+    panel.set_xlim(-2, 2)
+    assert visible_ticks(panel.xaxis) == [-2, 2]
+    kary.track("genes").area(BINS, start="start", end="end", value="n")
+    genes = kary.panel("1", "genes")
+    genes.set_xlim(0, 52)
+    assert visible_ticks(genes.xaxis) == [0, 50]
+
+
+def test_value_axis_tick_labels_do_not_overlap_in_a_narrow_track():
+    kary = pqp.Karyogram(HG38, tracks=[pqp.Track("cnv", size=1.5)])
+    kary.track("cnv").scatter(POINTS, pos="pos", value="log2")
+    kary.panel("1", "cnv").set_xlim(-2, 2)
+    kary.figure.draw_without_rendering()
+    renderer = kary.figure.canvas.get_renderer()
+    labels = [
+        t.get_window_extent(renderer)
+        for t in kary.panel("1", "cnv").xaxis.get_ticklabels()
+        if t.get_visible() and t.get_text()
+    ]
+    assert len(labels) == 2
+    assert not labels[0].overlaps(labels[1])

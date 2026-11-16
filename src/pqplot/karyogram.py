@@ -18,6 +18,7 @@ from matplotlib.figure import Figure
 from matplotlib.legend import Legend
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, StepPatch
+from matplotlib.ticker import MaxNLocator
 from matplotlib.typing import ColorType
 
 from pqplot import layout
@@ -960,6 +961,20 @@ def _own_axes(grid: layout.Grid, orientation: Orientation) -> Axes:
     return ax
 
 
+class _OuterTicks(MaxNLocator):
+    """Keeps only the lowest and highest round ticks in view, for narrow tracks."""
+
+    def __init__(self):
+        super().__init__(nbins=2, steps=[1, 2, 2.5, 5, 10])
+
+    def tick_values(self, vmin: float, vmax: float) -> np.ndarray:
+        ticks = super().tick_values(vmin, vmax)
+        low, high = sorted((vmin, vmax))
+        slack = 1e-9 * (high - low)
+        inside = ticks[(ticks >= low - slack) & (ticks <= high + slack)]
+        return inside[[0, -1]] if len(inside) > 2 else inside
+
+
 def _style_track(panel: Axes, orientation: Orientation, labels: bool) -> None:
     """Show only the value axis of a track panel, and only when `labels` is set.
 
@@ -973,6 +988,7 @@ def _style_track(panel: Axes, orientation: Orientation, labels: bool) -> None:
         along, value = panel.xaxis, panel.yaxis
         value.tick_right()
     along.set_visible(False)
+    value.set_major_locator(_OuterTicks())
     value.set_visible(labels)
     value.set_tick_params(labelsize="x-small", length=2)
     panel.patch.set_visible(False)
